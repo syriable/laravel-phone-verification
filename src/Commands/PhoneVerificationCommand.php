@@ -1,12 +1,12 @@
 <?php
 
-namespace VendorName\Skeleton\Commands;
+namespace Syriable\PhoneVerification\Commands;
 
 use Illuminate\Console\Command;
 
-class SkeletonCommand extends Command
+class PhoneVerificationCommand extends Command
 {
-    public $signature = 'skeleton';
+    public $signature = 'laravel-phone-verification';
 
     public $description = 'My command';
 

@@ -1,17 +1,17 @@
 {
-    "name": ":vendor_slug/:package_slug",
-    "description": ":package_description",
+    "name": "syriable/laravel-phone-verification",
+    "description": "This is my package laravel-phone-verification",
     "keywords": [
-        ":vendor_name",
+        "syriable",
         "laravel",
-        ":package_slug"
+        "laravel-phone-verification"
     ],
-    "homepage": "https://github.com/:vendor_slug/:package_slug",
+    "homepage": "https://github.com/syriable/laravel-phone-verification",
     "license": "MIT",
     "authors": [
         {
-            "name": ":author_name",
-            "email": "author@domain.com",
+            "name": "syriable",
+            "email": "info@syriable.com",
             "role": "Developer"
         }
     ],
@@ -31,17 +31,18 @@
         "phpstan/extension-installer": "^1.4",
         "phpstan/phpstan-deprecation-rules": "^2.0",
         "phpstan/phpstan-phpunit": "^2.0",
+        "rector/rector-laravel": "^2.5",
         "spatie/laravel-ray": "^1.35"
     },
     "autoload": {
         "psr-4": {
-            "VendorName\\Skeleton\\": "src/",
-            "VendorName\\Skeleton\\Database\\Factories\\": "database/factories/"
+            "Syriable\\PhoneVerification\\": "src/",
+            "Syriable\\PhoneVerification\\Database\\Factories\\": "database/factories/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "VendorName\\Skeleton\\Tests\\": "tests/",
+            "Syriable\\PhoneVerification\\Tests\\": "tests/",
             "Workbench\\App\\": "workbench/app/"
         }
     },
@@ -63,10 +64,10 @@
     "extra": {
         "laravel": {
             "providers": [
-                "VendorName\\Skeleton\\SkeletonServiceProvider"
+                "Syriable\\PhoneVerification\\PhoneVerificationServiceProvider"
             ],
             "aliases": {
-                "Skeleton": "VendorName\\Skeleton\\Facades\\Skeleton"
+                "PhoneVerification": "Syriable\\PhoneVerification\\Facades\\PhoneVerification"
             }
         }
     },
