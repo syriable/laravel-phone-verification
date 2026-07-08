@@ -6,13 +6,16 @@ namespace Syriable\PhoneVerification;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Database\Eloquent\Model;
 use Syriable\PhoneVerification\Contracts\CodeHasher;
 use Syriable\PhoneVerification\Contracts\OtpGenerator;
+use Syriable\PhoneVerification\Contracts\PhoneLinkRepository;
 use Syriable\PhoneVerification\Contracts\PhoneVerificationSender;
 use Syriable\PhoneVerification\Contracts\SendRateLimiter;
 use Syriable\PhoneVerification\Contracts\VerificationRepository;
 use Syriable\PhoneVerification\Enums\SendOutcome;
 use Syriable\PhoneVerification\Enums\VerificationOutcome;
+use Syriable\PhoneVerification\Events\PhoneLinked;
 use Syriable\PhoneVerification\Events\VerificationCreated;
 use Syriable\PhoneVerification\Events\VerificationExpired;
 use Syriable\PhoneVerification\Events\VerificationFailed;
@@ -35,6 +38,7 @@ class PhoneVerificationManager
         protected readonly CodeHasher $hasher,
         protected readonly PhoneVerificationConfig $config,
         protected readonly Dispatcher $events,
+        protected readonly PhoneLinkRepository $linkRepository,
     ) {}
 
     /**
@@ -57,8 +61,13 @@ class PhoneVerificationManager
 
     /**
      * Check a code against the active verification for the phone number.
+     *
+     * Pass $for to link the phone number to a model the moment the code is
+     * confirmed correct. If the phone is already linked to a different
+     * model, verification fails with phoneTakenByAnotherAccount() instead
+     * of being marked successful.
      */
-    public function verify(string $phone, string $code): VerificationResult
+    public function verify(string $phone, string $code, ?Model $for = null): VerificationResult
     {
         $record = $this->repository->findActive($phone);
 
@@ -92,7 +101,16 @@ class PhoneVerificationManager
             return new VerificationResult($outcome, $record, $record->attemptsRemaining($maxAttempts));
         }
 
+        if ($for instanceof Model && $this->linkRepository->isLinkedToAnother($phone, $for)) {
+            return new VerificationResult(VerificationOutcome::PhoneTakenByAnotherAccount, $record);
+        }
+
         $record = $this->repository->markVerified($record, $this->now());
+
+        if ($for instanceof Model) {
+            $this->linkRepository->link($phone, $for);
+            $this->events->dispatch(new PhoneLinked($phone, $for));
+        }
 
         $this->events->dispatch(new VerificationSucceeded($record));
 
@@ -137,6 +155,48 @@ class PhoneVerificationManager
     public function invalidate(string $phone): int
     {
         return $this->repository->invalidate($phone);
+    }
+
+    /**
+     * Link a phone number to a model. Idempotent when already linked to the
+     * same model. Returns false without making any change when the phone
+     * is already linked to a *different* model.
+     */
+    public function link(string $phone, Model $verifiable): bool
+    {
+        $linked = $this->linkRepository->link($phone, $verifiable);
+
+        if ($linked) {
+            $this->events->dispatch(new PhoneLinked($phone, $verifiable));
+        }
+
+        return $linked;
+    }
+
+    /**
+     * Remove the link for a phone number, if any.
+     *
+     * @return int the number of removed links (0 or 1)
+     */
+    public function unlink(string $phone): int
+    {
+        return $this->linkRepository->unlink($phone);
+    }
+
+    /**
+     * The model currently linked to the phone number, if any.
+     */
+    public function linkedTo(string $phone): ?Model
+    {
+        return $this->linkRepository->linkedTo($phone);
+    }
+
+    /**
+     * The phone number currently linked to the model, if any.
+     */
+    public function phoneFor(Model $verifiable): ?string
+    {
+        return $this->linkRepository->phoneFor($verifiable);
     }
 
     private function deliver(string $phone, bool $resend): SendResult

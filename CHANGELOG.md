@@ -17,3 +17,7 @@ All notable changes to `laravel-phone-verification` will be documented in this f
 - Events: `VerificationCreated`, `VerificationSent`, `VerificationResent`, `VerificationSucceeded`, `VerificationFailed`, `VerificationExpired`.
 - `verification:cleanup` and `verification:clear` Artisan commands with scheduler-friendly pruning.
 - `FakeSender` test double for application test suites.
+- Link a verified phone number to one of your own Eloquent models via a polymorphic relationship: `verify(..., for: $model)` auto-links on success, plus explicit `link()`, `unlink()`, `linkedTo()`, and `phoneFor()` on the facade.
+- `HasVerifiedPhone` trait providing a `phoneVerificationLink` morphOne relation, `verifiedPhoneNumber()`, and `hasVerifiedPhoneNumber()` on your model.
+- `phoneTakenByAnotherAccount()` verification outcome, and a `PhoneLinked` event, guarding against one phone number being linked to more than one model at a time.
+- Swappable link storage behind the `PhoneLinkRepository` contract (database driver included).

@@ -2,6 +2,7 @@
 
 use Syriable\PhoneVerification\Hashing\HmacCodeHasher;
 use Syriable\PhoneVerification\RateLimiting\CacheSendRateLimiter;
+use Syriable\PhoneVerification\Repositories\DatabasePhoneLinkRepository;
 use Syriable\PhoneVerification\Repositories\DatabaseVerificationRepository;
 
 return [
@@ -135,6 +136,23 @@ return [
     'repository' => DatabaseVerificationRepository::class,
 
     'table' => 'phone_verifications',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Phone Link Repository
+    |--------------------------------------------------------------------------
+    |
+    | Where phone-to-model links are stored, when you link a verified phone
+    | number to one of your own models (e.g. a User) via the $for argument
+    | of verify(), or explicitly through PhoneVerification::link(). You may
+    | swap in any implementation of
+    | \Syriable\PhoneVerification\Contracts\PhoneLinkRepository.
+    |
+    */
+
+    'link_repository' => DatabasePhoneLinkRepository::class,
+
+    'links_table' => 'phone_verification_links',
 
     /*
     |--------------------------------------------------------------------------

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Syriable\PhoneVerification\Contracts\CodeHasher;
 use Syriable\PhoneVerification\Contracts\OtpGenerator;
+use Syriable\PhoneVerification\Contracts\PhoneLinkRepository;
 use Syriable\PhoneVerification\Contracts\PhoneVerificationSender;
 use Syriable\PhoneVerification\Contracts\SendRateLimiter;
 use Syriable\PhoneVerification\Contracts\VerificationRepository;
@@ -11,9 +12,11 @@ use Syriable\PhoneVerification\Exceptions\InvalidConfiguration;
 use Syriable\PhoneVerification\Facades\PhoneVerification;
 use Syriable\PhoneVerification\Models\PhoneVerification as PhoneVerificationModel;
 use Syriable\PhoneVerification\Tests\Fixtures\FixedOtpGenerator;
+use Syriable\PhoneVerification\Tests\Fixtures\InMemoryPhoneLinkRepository;
 use Syriable\PhoneVerification\Tests\Fixtures\InMemoryVerificationRepository;
 use Syriable\PhoneVerification\Tests\Fixtures\PlainCodeHasher;
 use Syriable\PhoneVerification\Tests\Fixtures\UnlimitedRateLimiter;
+use Syriable\PhoneVerification\Tests\Fixtures\VerifiableUser;
 
 it('supports a custom otp generator', function (): void {
     config()->set('phone-verification.otp.generator', FixedOtpGenerator::class);
@@ -121,3 +124,22 @@ it('refuses to hash codes without an application key', function (): void {
 
     PhoneVerification::send('+31612345678');
 })->throws(InvalidConfiguration::class, 'app.key');
+
+it('supports a custom phone link repository', function (): void {
+    $this->app->singleton(InMemoryPhoneLinkRepository::class);
+    config()->set('phone-verification.link_repository', InMemoryPhoneLinkRepository::class);
+
+    $user = VerifiableUser::query()->create(['name' => 'Ada']);
+
+    expect(PhoneVerification::link('+31612345678', $user))->toBeTrue()
+        ->and(PhoneVerification::linkedTo('+31612345678')?->is($user))->toBeTrue()
+        ->and(PhoneVerification::phoneFor($user))->toBe('+31612345678');
+});
+
+it('rejects a phone link repository that does not implement the contract', function (): void {
+    config()->set('phone-verification.link_repository', stdClass::class);
+
+    $user = VerifiableUser::query()->create(['name' => 'Ada']);
+
+    PhoneVerification::link('+31612345678', $user);
+})->throws(InvalidConfiguration::class, PhoneLinkRepository::class);

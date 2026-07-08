@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Syriable\PhoneVerification\Tests;
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 use Orchestra\Testbench\TestCase as Orchestra;
 use Syriable\PhoneVerification\PhoneVerificationServiceProvider;
 use Syriable\PhoneVerification\Testing\FakeSender;
@@ -19,7 +21,9 @@ abstract class TestCase extends Orchestra
 
         config()->set('phone-verification.sender', FakeSender::class);
 
-        $this->runPackageMigration();
+        $this->runPackageMigration('create_phone_verifications_table.php.stub');
+        $this->runPackageMigration('create_phone_verification_links_table.php.stub');
+        $this->createUsersTable();
     }
 
     protected function getPackageProviders($app): array
@@ -41,12 +45,21 @@ abstract class TestCase extends Orchestra
         return $this->app->make(FakeSender::class);
     }
 
-    private function runPackageMigration(): void
+    private function runPackageMigration(string $fileName): void
     {
-        $migration = include __DIR__.'/../database/migrations/create_phone_verifications_table.php.stub';
+        $migration = include __DIR__."/../database/migrations/{$fileName}";
 
         assert($migration instanceof Migration && method_exists($migration, 'up'));
 
         $migration->up();
+    }
+
+    private function createUsersTable(): void
+    {
+        Schema::create('users', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+        });
     }
 }
