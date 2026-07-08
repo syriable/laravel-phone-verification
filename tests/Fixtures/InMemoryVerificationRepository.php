@@ -88,12 +88,12 @@ final class InMemoryVerificationRepository implements VerificationRepository
 
     private function latest(string $phone, bool $verified): ?VerificationRecord
     {
-        $matches = array_filter(
+        $matches = array_values(array_filter(
             $this->records,
             fn (VerificationRecord $record): bool => $record->phone === $phone && $record->isVerified() === $verified,
-        );
+        ));
 
-        return array_reverse($matches)[0] ?? null;
+        return $matches === [] ? null : $matches[array_key_last($matches)];
     }
 
     private function replace(

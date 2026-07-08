@@ -13,6 +13,7 @@ use Syriable\PhoneVerification\Commands\CleanupCommand;
 use Syriable\PhoneVerification\Commands\ClearCommand;
 use Syriable\PhoneVerification\Contracts\CodeHasher;
 use Syriable\PhoneVerification\Contracts\OtpGenerator;
+use Syriable\PhoneVerification\Contracts\PhoneLinkRepository;
 use Syriable\PhoneVerification\Contracts\PhoneVerificationSender;
 use Syriable\PhoneVerification\Contracts\SendRateLimiter;
 use Syriable\PhoneVerification\Contracts\VerificationRepository;
@@ -20,6 +21,7 @@ use Syriable\PhoneVerification\Exceptions\InvalidConfiguration;
 use Syriable\PhoneVerification\Generators\RandomOtpGenerator;
 use Syriable\PhoneVerification\Hashing\HmacCodeHasher;
 use Syriable\PhoneVerification\RateLimiting\CacheSendRateLimiter;
+use Syriable\PhoneVerification\Repositories\DatabasePhoneLinkRepository;
 use Syriable\PhoneVerification\Repositories\DatabaseVerificationRepository;
 use Syriable\PhoneVerification\Support\PhoneVerificationConfig;
 
@@ -30,7 +32,10 @@ class PhoneVerificationServiceProvider extends PackageServiceProvider
         $package
             ->name('laravel-phone-verification')
             ->hasConfigFile()
-            ->hasMigration('create_phone_verifications_table')
+            ->hasMigrations([
+                'create_phone_verifications_table',
+                'create_phone_verification_links_table',
+            ])
             ->hasCommands(CleanupCommand::class, ClearCommand::class);
     }
 
@@ -70,6 +75,13 @@ class PhoneVerificationServiceProvider extends PackageServiceProvider
                 ?? DatabaseVerificationRepository::class;
 
             return $this->makeConfigured($app, 'repository', $repository, VerificationRepository::class);
+        });
+
+        $this->app->bind(PhoneLinkRepository::class, function (Container $app): PhoneLinkRepository {
+            $repository = $app->make(PhoneVerificationConfig::class)->linkRepository()
+                ?? DatabasePhoneLinkRepository::class;
+
+            return $this->makeConfigured($app, 'link_repository', $repository, PhoneLinkRepository::class);
         });
 
         $this->app->bind(SendRateLimiter::class, function (Container $app): SendRateLimiter {

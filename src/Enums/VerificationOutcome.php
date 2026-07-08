@@ -12,4 +12,5 @@ enum VerificationOutcome: string
     case TooManyAttempts = 'too_many_attempts';
     case AlreadyVerified = 'already_verified';
     case NotFound = 'not_found';
+    case PhoneTakenByAnotherAccount = 'phone_taken_by_another_account';
 }

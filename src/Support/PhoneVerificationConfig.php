@@ -103,6 +103,21 @@ final readonly class PhoneVerificationConfig
     /**
      * @return class-string|null
      */
+    public function linkRepository(): ?string
+    {
+        return $this->classString('link_repository');
+    }
+
+    public function linksTable(): string
+    {
+        $table = $this->get('links_table', 'phone_verification_links');
+
+        return is_string($table) && $table !== '' ? $table : 'phone_verification_links';
+    }
+
+    /**
+     * @return class-string|null
+     */
     public function rateLimiter(): ?string
     {
         return $this->classString('rate_limiter');

@@ -244,6 +244,14 @@ $result->attemptsRemaining;  // attempts left on the active code, when relevant
 
 Once a code has been used successfully it can never be replayed: a second `verify()` call with the same (or any) code returns `alreadyVerified()`.
 
+To link the phone number to one of your own models (e.g. a `User`) the moment verification succeeds, pass it as `for` — see [Linking a phone to a model](#linking-a-phone-to-a-model):
+
+```php
+$result = PhoneVerification::verify(phone: '+31612345678', code: '482913', for: $user);
+
+$result->phoneTakenByAnotherAccount(); // the code was correct, but the phone belongs to a different account
+```
+
 ### Checking status
 
 ```php
@@ -280,6 +288,54 @@ Cancel any outstanding code, for example after the user changes their phone numb
 ```php
 PhoneVerification::invalidate('+31612345678');
 ```
+
+## Linking a phone to a model
+
+Each phone number can be linked to exactly one of your Eloquent models — typically a `User`, but any model works via a polymorphic (`morphTo`) relationship. This lives in its own `phone_verification_links` table, entirely separate from the OTP lifecycle, so linking is optional and never changes how `send()`/`resend()` behave.
+
+Add the trait to any model that can own a verified phone number:
+
+```php
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Syriable\PhoneVerification\Concerns\HasVerifiedPhone;
+
+class User extends Authenticatable
+{
+    use HasVerifiedPhone;
+}
+```
+
+This gives you a real Eloquent relation plus two convenience helpers:
+
+```php
+$user->phoneVerificationLink;        // MorphOne<PhoneVerificationLink> — eager-loadable, e.g. User::with('phoneVerificationLink')
+$user->verifiedPhoneNumber();        // '+31612345678' or null
+$user->hasVerifiedPhoneNumber();     // bool
+```
+
+The most common flow is auto-linking on successful verification, by passing the model as `for`:
+
+```php
+$result = PhoneVerification::verify(phone: '+31612345678', code: '482913', for: $user);
+
+$result->successful();                 // linked: the code was correct and the phone wasn't taken
+$result->phoneTakenByAnotherAccount(); // the code was correct, but the phone already belongs to someone else
+```
+
+A phone number can only ever be linked to one model at a time — verifying it a second time for the *same* model is idempotent, but verifying it for a *different* model fails with `phoneTakenByAnotherAccount()` instead of silently stealing the number.
+
+You can also manage links directly, independently of the OTP flow (for example when you already know a phone was verified through another channel, or want to detach it):
+
+```php
+PhoneVerification::link('+31612345678', $user);   // true, or false if taken by another model
+PhoneVerification::linkedTo('+31612345678');       // the linked model, or null
+PhoneVerification::phoneFor($user);                // the phone linked to this model, or null
+PhoneVerification::unlink('+31612345678');         // removes the link, returns 0 or 1
+```
+
+Storage goes through the `PhoneLinkRepository` contract, so it's swappable like everything else — set `link_repository` in the config to your own implementation.
+
+The published `create_phone_verification_links_table` migration uses `$table->morphs('verifiable')`, which assumes auto-incrementing integer model keys. If your models use UUIDs, edit the published migration to use `$table->uuidMorphs('verifiable')` (or `$table->ulidMorphs('verifiable')`) instead.
 
 ## Custom OTP generation
 
@@ -345,6 +401,7 @@ The same pattern applies to the other extension points:
 | `repository` | `VerificationRepository` | `DatabaseVerificationRepository` |
 | `rate_limiter` | `SendRateLimiter` | `CacheSendRateLimiter` |
 | `hash_driver` | `CodeHasher` | `HmacCodeHasher` |
+| `link_repository` | `PhoneLinkRepository` | `DatabasePhoneLinkRepository` |
 
 Every configured class is validated against its interface at resolve time; a misconfigured class throws a descriptive `InvalidConfiguration` exception.
 
@@ -360,6 +417,7 @@ The package dispatches plain event objects you can listen to:
 | `VerificationSucceeded` | a code was verified successfully |
 | `VerificationFailed` | a wrong code was submitted (`outcome` tells you whether attempts ran out) |
 | `VerificationExpired` | a verification attempt hit an expired code |
+| `PhoneLinked` | a phone number was linked to a model, via `verify(..., for: $model)` or `link()` |
 
 Every event exposes the immutable `VerificationRecord` — never the plain-text code:
 

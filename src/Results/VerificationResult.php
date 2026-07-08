@@ -53,4 +53,13 @@ final readonly class VerificationResult
     {
         return $this->outcome === VerificationOutcome::NotFound;
     }
+
+    /**
+     * The code was correct, but the phone number is already linked to a
+     * different model than the one passed to verify().
+     */
+    public function phoneTakenByAnotherAccount(): bool
+    {
+        return $this->outcome === VerificationOutcome::PhoneTakenByAnotherAccount;
+    }
 }
