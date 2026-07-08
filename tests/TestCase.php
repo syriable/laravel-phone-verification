@@ -1,37 +1,52 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Syriable\PhoneVerification\Tests;
 
-use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Migrations\Migration;
 use Orchestra\Testbench\TestCase as Orchestra;
 use Syriable\PhoneVerification\PhoneVerificationServiceProvider;
+use Syriable\PhoneVerification\Testing\FakeSender;
 
-class TestCase extends Orchestra
+abstract class TestCase extends Orchestra
 {
     protected function setUp(): void
     {
         parent::setUp();
 
-        Factory::guessFactoryNamesUsing(
-            fn (string $modelName) => 'Syriable\\PhoneVerification\\Database\\Factories\\'.class_basename($modelName).'Factory'
-        );
+        $this->app->singleton(FakeSender::class);
+
+        config()->set('phone-verification.sender', FakeSender::class);
+
+        $this->runPackageMigration();
     }
 
-    protected function getPackageProviders($app)
+    protected function getPackageProviders($app): array
     {
         return [
             PhoneVerificationServiceProvider::class,
         ];
     }
 
-    public function getEnvironmentSetUp($app)
+    protected function getEnvironmentSetUp($app): void
     {
+        config()->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
         config()->set('database.default', 'testing');
+        config()->set('cache.default', 'array');
+    }
 
-        /*
-         foreach (\Illuminate\Support\Facades\File::allFiles(__DIR__ . '/../database/migrations') as $migration) {
-            (include $migration->getRealPath())->up();
-         }
-         */
+    protected function fakeSender(): FakeSender
+    {
+        return $this->app->make(FakeSender::class);
+    }
+
+    private function runPackageMigration(): void
+    {
+        $migration = include __DIR__.'/../database/migrations/create_phone_verifications_table.php.stub';
+
+        assert($migration instanceof Migration && method_exists($migration, 'up'));
+
+        $migration->up();
     }
 }
