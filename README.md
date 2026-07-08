@@ -140,8 +140,19 @@ Senders are resolved from the container, so constructor dependencies are injecte
 
 ### Example: Vonage
 
+Install Vonage's official Laravel integration — it registers `Vonage\Client` in the container for you, so your sender needs no extra bindings:
+
 ```bash
-composer require vonage/client
+composer require vonage/vonage-laravel
+php artisan vendor:publish --provider="Vonage\Laravel\VonageServiceProvider"
+```
+
+Set your credentials in `.env`:
+
+```
+VONAGE_KEY=your_api_key
+VONAGE_SECRET=your_secret
+VONAGE_FROM=Verify
 ```
 
 ```php
@@ -160,31 +171,10 @@ class VonageSender implements PhoneVerificationSender
     public function send(string $phone, string $code): void
     {
         $this->vonage->sms()->send(
-            new SMS($phone, config('services.vonage.from'), "Your verification code is {$code}")
+            new SMS($phone, env('VONAGE_FROM'), "Your verification code is {$code}")
         );
     }
 }
-```
-
-Register the Vonage client in a service provider:
-
-```php
-use Vonage\Client;
-use Vonage\Client\Credentials\Basic;
-
-$this->app->singleton(Client::class, fn () => new Client(
-    new Basic(config('services.vonage.key'), config('services.vonage.secret')),
-));
-```
-
-Add credentials to `config/services.php`:
-
-```php
-'vonage' => [
-    'key' => env('VONAGE_KEY'),
-    'secret' => env('VONAGE_SECRET'),
-    'from' => env('VONAGE_FROM', 'Verify'),
-],
 ```
 
 Then point the package at it:
