@@ -138,6 +138,61 @@ Senders are resolved from the container, so constructor dependencies are injecte
 'sender' => App\Verification\TwilioSender::class,
 ```
 
+### Example: Vonage
+
+```bash
+composer require vonage/client
+```
+
+```php
+namespace App\Verification;
+
+use Syriable\PhoneVerification\Contracts\PhoneVerificationSender;
+use Vonage\Client;
+use Vonage\SMS\Message\SMS;
+
+class VonageSender implements PhoneVerificationSender
+{
+    public function __construct(
+        private readonly Client $vonage,
+    ) {}
+
+    public function send(string $phone, string $code): void
+    {
+        $this->vonage->sms()->send(
+            new SMS($phone, config('services.vonage.from'), "Your verification code is {$code}")
+        );
+    }
+}
+```
+
+Register the Vonage client in a service provider:
+
+```php
+use Vonage\Client;
+use Vonage\Client\Credentials\Basic;
+
+$this->app->singleton(Client::class, fn () => new Client(
+    new Basic(config('services.vonage.key'), config('services.vonage.secret')),
+));
+```
+
+Add credentials to `config/services.php`:
+
+```php
+'vonage' => [
+    'key' => env('VONAGE_KEY'),
+    'secret' => env('VONAGE_SECRET'),
+    'from' => env('VONAGE_FROM', 'Verify'),
+],
+```
+
+Then point the package at it:
+
+```php
+'sender' => App\Verification\VonageSender::class,
+```
+
 Then send a code:
 
 ```php
