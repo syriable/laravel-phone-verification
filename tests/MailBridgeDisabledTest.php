@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Events\Dispatcher;
 use Syriable\OtpVerification\Channel;
 use Syriable\OtpVerification\Events\VerificationSucceeded;
 use Syriable\OtpVerification\Facades\Verification;
@@ -10,7 +10,11 @@ use Syriable\OtpVerification\Tests\Fixtures\VerifiableUser;
 
 describe('the MustVerifyEmail bridge, disabled by default', function (): void {
     it('registers no listener at all', function (): void {
-        expect(app(Dispatcher::class)->hasListeners(VerificationSucceeded::class))->toBeFalse();
+        // Not hasListeners(): that also reports true for any wildcard listener
+        // the framework happens to have registered, which says nothing about
+        // this package. The raw map is specific to the event.
+        expect(app(Dispatcher::class)->getRawListeners())
+            ->not->toHaveKey(VerificationSucceeded::class);
     });
 
     it('leaves the user untouched', function (): void {

@@ -18,7 +18,7 @@ function enableMailBridge(): void
 {
     config()->set('otp-verification.mail.mark_email_as_verified', true);
 
-    test()->app->register(OtpVerificationServiceProvider::class, true);
+    app()->register(OtpVerificationServiceProvider::class, force: true);
 }
 
 function bridgeUser(string $email = 'ada@example.com', ?string $verifiedAt = null): VerifiableUser
