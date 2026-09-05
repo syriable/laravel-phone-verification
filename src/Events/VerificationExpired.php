@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Events;
+namespace Syriable\OtpVerification\Events;
 
-use Syriable\PhoneVerification\Support\VerificationRecord;
+use Syriable\OtpVerification\Support\VerificationRecord;
 
 /**
- * Dispatched when a verification attempt hit a code that had expired.
+ * The record carries the channel, and never the plain-text code.
  */
 final readonly class VerificationExpired
 {

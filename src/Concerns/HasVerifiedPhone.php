@@ -2,40 +2,34 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Concerns;
+namespace Syriable\OtpVerification\Concerns;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
-use Syriable\PhoneVerification\Models\PhoneVerificationLink;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Models\VerificationLink;
+use Syriable\OtpVerification\Support\OtpVerificationConfig;
 
 /**
- * Add this to any model that can own a verified phone number:
+ * The v1 trait, kept as a thin composition over the generic one.
  *
- *     class User extends Authenticatable
- *     {
- *         use HasVerifiedPhone;
- *     }
+ * @deprecated since 2.0, removed in 3.0 — use HasVerifiedIdentifiers
  *
- * A phone number becomes linked to the model when
- * PhoneVerification::verify() is called with the model as $for, or
- * explicitly through PhoneVerification::link().
+ * @mixin Model
  */
 trait HasVerifiedPhone
 {
+    use HasVerifiedIdentifiers;
+
     /**
-     * @return MorphOne<PhoneVerificationLink, $this>
+     * @deprecated since 2.0, removed in 3.0 — use verificationLinks()
+     *
+     * @return MorphOne<VerificationLink, $this>
      */
     public function phoneVerificationLink(): MorphOne
     {
-        return $this->morphOne(PhoneVerificationLink::class, 'verifiable');
-    }
-
-    public function verifiedPhoneNumber(): ?string
-    {
-        return $this->phoneVerificationLink?->phone;
-    }
-
-    public function hasVerifiedPhoneNumber(): bool
-    {
-        return $this->verifiedPhoneNumber() !== null;
+        return $this
+            ->morphOne(app(OtpVerificationConfig::class)->linkModel(), 'verifiable')
+            ->where('channel', Channel::SMS);
     }
 }

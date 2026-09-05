@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Generators;
+namespace Syriable\OtpVerification\Generators;
 
-use Syriable\PhoneVerification\Contracts\OtpGenerator;
-use Syriable\PhoneVerification\Exceptions\InvalidConfiguration;
+use Syriable\OtpVerification\Contracts\OtpGenerator;
+use Syriable\OtpVerification\Exceptions\InvalidConfiguration;
 
 /**
  * Generates codes using a cryptographically secure random source.

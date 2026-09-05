@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Enums;
+namespace Syriable\OtpVerification\Enums;
 
 enum OtpType: string
 {
@@ -11,9 +11,9 @@ enum OtpType: string
     case Alphanumeric = 'alphanumeric';
 
     /**
-     * The character set for this type. Alphabetic and alphanumeric sets
-     * exclude easily confused characters (0/O, 1/I) so codes stay readable
-     * in any SMS font.
+     * The character set for this type. The alphabetic and alphanumeric sets
+     * exclude easily confused characters (0/O, 1/I) so codes stay readable in
+     * an SMS font and unambiguous when read aloud.
      */
     public function characters(): string
     {

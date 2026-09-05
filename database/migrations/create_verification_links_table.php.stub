@@ -1,0 +1,39 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Syriable\OtpVerification\Support\VerificationSubject;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create($this->tableName(), function (Blueprint $table): void {
+            $table->uuid('id')->primary();
+            $table->string('identifier', VerificationSubject::MAX_IDENTIFIER_LENGTH);
+            $table->string('channel', 32);
+            $table->morphs('verifiable');
+            $table->timestamps();
+
+            // One identifier belongs to at most one model per channel...
+            $table->unique(['identifier', 'channel']);
+
+            // ...and a model holds at most one verified identifier per
+            // channel, which is what lets it hold a phone AND an email.
+            $table->unique(['verifiable_type', 'verifiable_id', 'channel'], 'verification_links_verifiable_channel_unique');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists($this->tableName());
+    }
+
+    private function tableName(): string
+    {
+        $table = config('otp-verification.links_table', 'verification_links');
+
+        return is_string($table) && $table !== '' ? $table : 'verification_links';
+    }
+};

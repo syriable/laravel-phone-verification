@@ -2,14 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Results;
+namespace Syriable\OtpVerification\Results;
 
 use Carbon\CarbonImmutable;
-use Syriable\PhoneVerification\Enums\VerificationState;
+use Syriable\OtpVerification\Enums\VerificationState;
 
 /**
- * A read-only snapshot of where a phone number stands in the
- * verification flow.
+ * A read-only snapshot of where an identifier stands on one channel.
  */
 final readonly class VerificationStatus
 {

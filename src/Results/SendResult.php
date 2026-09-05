@@ -2,14 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Results;
+namespace Syriable\OtpVerification\Results;
 
-use Syriable\PhoneVerification\Enums\SendOutcome;
-use Syriable\PhoneVerification\Support\VerificationRecord;
+use Syriable\OtpVerification\Enums\SendOutcome;
+use Syriable\OtpVerification\Support\VerificationRecord;
 
 /**
  * The result of sending (or resending) a verification code.
  * Expected failures are expressed as outcomes, never as exceptions.
+ *
+ * With queued delivery enabled, a successful result means the code was
+ * accepted for delivery, not that it was delivered: the sender runs later,
+ * on a worker, and its failures surface there rather than here.
  */
 final readonly class SendResult
 {

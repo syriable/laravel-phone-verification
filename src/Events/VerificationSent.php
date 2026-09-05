@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Events;
+namespace Syriable\OtpVerification\Events;
 
-use Syriable\PhoneVerification\Support\VerificationRecord;
+use Syriable\OtpVerification\Support\VerificationRecord;
 
 /**
- * Dispatched after the sender delivered a verification code.
+ * The record carries the channel, and never the plain-text code.
  */
 final readonly class VerificationSent
 {

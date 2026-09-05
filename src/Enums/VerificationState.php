@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Enums;
+namespace Syriable\OtpVerification\Enums;
 
 enum VerificationState: string
 {

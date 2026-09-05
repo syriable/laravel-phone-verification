@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Contracts;
+namespace Syriable\OtpVerification\Contracts;
 
 interface OtpGenerator
 {

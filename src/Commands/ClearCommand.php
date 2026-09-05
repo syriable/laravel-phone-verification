@@ -2,27 +2,70 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Commands;
+namespace Syriable\OtpVerification\Commands;
 
 use Illuminate\Console\Command;
-use Syriable\PhoneVerification\Contracts\VerificationRepository;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\ChannelResolver;
+use Syriable\OtpVerification\Contracts\VerificationRepository;
+use Syriable\OtpVerification\Support\OtpVerificationConfig;
+use Syriable\OtpVerification\Support\VerificationSubject;
 
-class ClearCommand extends Command
+final class ClearCommand extends Command
 {
-    protected $signature = 'verification:clear {phone? : Only clear records for this phone number}';
+    protected $signature = 'verification:clear
+        {identifier? : Only clear records for this identifier}
+        {--channel= : Only clear records on this channel}';
 
-    protected $description = 'Delete phone verification records, optionally for a single phone number';
+    protected $description = 'Delete verification records, optionally for one identifier or one channel';
 
-    public function handle(VerificationRepository $repository): int
-    {
-        $phone = $this->argument('phone');
-        $phone = is_string($phone) && $phone !== '' ? $phone : null;
+    public function handle(
+        VerificationRepository $repository,
+        ChannelResolver $channels,
+        OtpVerificationConfig $config,
+    ): int {
+        $identifier = $this->argument('identifier');
+        $identifier = is_string($identifier) && $identifier !== '' ? $identifier : null;
 
-        $deleted = $repository->clear($phone);
+        $option = $this->option('channel');
+        $channel = null;
 
-        $this->info($phone === null
-            ? "Removed all {$deleted} phone verification record(s)."
-            : "Removed {$deleted} phone verification record(s) for {$phone}.");
+        if (is_string($option) && $option !== '') {
+            $channel = Channel::tryOf($option);
+
+            if (! $channel instanceof Channel) {
+                $this->error("`{$option}` is not a valid channel name.");
+
+                return self::FAILURE;
+            }
+        }
+
+        if ($identifier === null) {
+            $deleted = $repository->clear(channel: $channel);
+
+            $this->info($channel instanceof Channel
+                ? "Removed {$deleted} verification record(s) on the {$channel->value} channel."
+                : "Removed all {$deleted} verification record(s).");
+
+            return self::SUCCESS;
+        }
+
+        // Clearing one identifier needs a channel: the same address can hold
+        // independent records on several channels.
+        $channel ??= $config->defaultChannel();
+
+        if (! $channel instanceof Channel) {
+            $this->error(
+                'Clearing a single identifier needs a channel. Pass --channel, '
+                .'or set `otp-verification.default_channel`.'
+            );
+
+            return self::FAILURE;
+        }
+
+        $deleted = $repository->clear(VerificationSubject::of($identifier, $channel));
+
+        $this->info("Removed {$deleted} verification record(s) for {$identifier} on the {$channel->value} channel.");
 
         return self::SUCCESS;
     }

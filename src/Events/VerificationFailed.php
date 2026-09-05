@@ -2,14 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Events;
+namespace Syriable\OtpVerification\Events;
 
-use Syriable\PhoneVerification\Enums\VerificationOutcome;
-use Syriable\PhoneVerification\Support\VerificationRecord;
+use Syriable\OtpVerification\Enums\VerificationOutcome;
+use Syriable\OtpVerification\Support\VerificationRecord;
 
 /**
- * Dispatched when a verification attempt failed. The outcome tells you
- * whether the code was invalid or the attempt limit was reached.
+ * The record carries the channel, and never the plain-text code.
  */
 final readonly class VerificationFailed
 {

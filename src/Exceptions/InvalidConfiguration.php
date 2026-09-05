@@ -2,17 +2,39 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Exceptions;
+namespace Syriable\OtpVerification\Exceptions;
 
 use InvalidArgumentException;
 
 final class InvalidConfiguration extends InvalidArgumentException
 {
-    public static function missingSender(): self
+    public static function missingSender(string $channel): self
     {
         return new self(
-            'No phone verification sender is configured. Set `phone-verification.sender` to a class '
-            .'implementing Syriable\PhoneVerification\Contracts\PhoneVerificationSender.'
+            "No sender is configured for the `{$channel}` channel. Set "
+            ."`otp-verification.channels.{$channel}.sender` to a class implementing "
+            .'Syriable\OtpVerification\Contracts\OtpSender.'
+        );
+    }
+
+    /**
+     * @param  list<string>  $registered
+     */
+    public static function unknownChannel(string $channel, array $registered): self
+    {
+        $known = $registered === [] ? 'none' : implode(', ', $registered);
+
+        return new self(
+            "The channel `{$channel}` is not configured. Add it under `otp-verification.channels`. "
+            ."Currently registered channels: {$known}."
+        );
+    }
+
+    public static function noDefaultChannel(): self
+    {
+        return new self(
+            'No channel was passed and `otp-verification.default_channel` is not set. Either pass a channel '
+            .'explicitly, or set a default channel in the configuration file.'
         );
     }
 
@@ -23,23 +45,23 @@ final class InvalidConfiguration extends InvalidArgumentException
     public static function invalidImplementation(string $key, string $class, string $interface): self
     {
         return new self(
-            "The class `{$class}` configured in `phone-verification.{$key}` must implement `{$interface}`."
+            "The class `{$class}` configured in `otp-verification.{$key}` must implement `{$interface}`."
         );
     }
 
     public static function classNotFound(string $key, string $class): self
     {
         return new self(
-            "The class `{$class}` configured in `phone-verification.{$key}` does not exist."
+            "The class `{$class}` configured in `otp-verification.{$key}` does not exist."
         );
     }
 
-    public static function unknownOtpType(mixed $type): self
+    public static function unknownOtpType(mixed $type, string $key): self
     {
         $type = is_scalar($type) ? (string) $type : gettype($type);
 
         return new self(
-            "Unknown OTP type `{$type}` configured in `phone-verification.otp.type`. "
+            "Unknown OTP type `{$type}` configured in `otp-verification.{$key}`. "
             .'Supported types: numeric, alphabetic, alphanumeric.'
         );
     }
@@ -57,7 +79,7 @@ final class InvalidConfiguration extends InvalidArgumentException
     public static function missingApplicationKey(): self
     {
         return new self(
-            'Phone verification codes are hashed with your application key, but no `app.key` is set. '
+            'Verification codes are hashed with your application key, but no `app.key` is set. '
             .'Generate one with `php artisan key:generate`.'
         );
     }
