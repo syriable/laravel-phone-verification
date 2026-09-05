@@ -114,7 +114,7 @@ describe('the MustVerifyEmail bridge, enabled', function (): void {
 
     it('honours a configured non-default verification purpose', function (): void {
         config()->set('otp-verification.mail.verification_purpose', 'email_activation');
-        app()->register(\Syriable\OtpVerification\OtpVerificationServiceProvider::class, force: true);
+        app()->register(OtpVerificationServiceProvider::class, force: true);
 
         $user = bridgeUser();
 
