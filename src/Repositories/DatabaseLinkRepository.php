@@ -55,7 +55,9 @@ final readonly class DatabaseLinkRepository implements LinkRepository
 
     public function unlink(VerificationSubject $subject): int
     {
-        return $this->queryFor($subject)->delete();
+        $deleted = $this->queryFor($subject)->delete();
+
+        return is_numeric($deleted) ? (int) $deleted : 0;
     }
 
     public function linkedTo(VerificationSubject $subject): ?Model

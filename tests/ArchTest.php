@@ -52,22 +52,46 @@ arch('only the testing utilities depend on PHPUnit')
 describe('channel-neutral naming', function (): void {
     it('keeps phone-specific names confined to the deprecated shims', function (): void {
         $allowed = [
-            'src/Concerns/HasVerifiedPhone.php',
-            'src/Events/PhoneLinked.php',
-            'src/Facades/PhoneVerification.php',
+            'Concerns/HasVerifiedPhone.php',
+            'Events/PhoneLinked.php',
+            'Facades/PhoneVerification.php',
         ];
 
+        $source = realpath(__DIR__.'/../src');
+        expect($source)->toBeString();
+
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($source));
         $offenders = [];
 
-        foreach (glob(__DIR__.'/../src/**/*.php') ?: [] as $path) {
-            $relative = 'src/'.ltrim(str_replace(realpath(__DIR__.'/../src') ?: '', '', realpath($path) ?: ''), '/\\');
-            $relative = str_replace('\\', '/', $relative);
+        foreach ($files as $file) {
+            if (! $file->isFile() || $file->getExtension() !== 'php') {
+                continue;
+            }
 
-            if (str_contains(basename($path), 'Phone') && ! in_array($relative, $allowed, true)) {
+            $relative = str_replace('\\', '/', substr($file->getPathname(), strlen((string) $source) + 1));
+
+            if (str_contains($file->getBasename(), 'Phone') && ! in_array($relative, $allowed, true)) {
                 $offenders[] = $relative;
             }
         }
 
         expect($offenders)->toBe([]);
+    });
+
+    it('actually walks the whole source tree', function (): void {
+        $source = realpath(__DIR__.'/../src');
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator((string) $source));
+
+        $count = 0;
+
+        foreach ($files as $file) {
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                $count++;
+            }
+        }
+
+        // Guards the guard above: a scan that silently matched nothing would
+        // pass the naming rule for the wrong reason.
+        expect($count)->toBeGreaterThan(40);
     });
 });

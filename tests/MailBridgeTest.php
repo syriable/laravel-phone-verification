@@ -6,10 +6,20 @@ use Illuminate\Auth\Events\Verified;
 use Illuminate\Support\Facades\Event;
 use Syriable\OtpVerification\Channel;
 use Syriable\OtpVerification\Facades\Verification;
+use Syriable\OtpVerification\OtpVerificationServiceProvider;
 use Syriable\OtpVerification\Tests\Fixtures\VerifiableUser;
-use Syriable\OtpVerification\Tests\MailBridgeTestCase;
 
-uses(MailBridgeTestCase::class);
+/**
+ * The listener is registered in packageBooted(), so turning the flag on means
+ * re-registering the provider. That is deliberate: it exercises the provider's
+ * conditional registration rather than wiring the listener up by hand.
+ */
+function enableMailBridge(): void
+{
+    config()->set('otp-verification.mail.mark_email_as_verified', true);
+
+    test()->app->register(OtpVerificationServiceProvider::class, true);
+}
 
 function bridgeUser(string $email = 'ada@example.com', ?string $verifiedAt = null): VerifiableUser
 {
@@ -21,6 +31,8 @@ function bridgeUser(string $email = 'ada@example.com', ?string $verifiedAt = nul
 }
 
 describe('the MustVerifyEmail bridge, enabled', function (): void {
+    beforeEach(fn () => enableMailBridge());
+
     it('marks the email verified and fires Laravel\'s Verified event', function (): void {
         Event::fake([Verified::class]);
 

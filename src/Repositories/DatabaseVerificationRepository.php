@@ -148,7 +148,9 @@ final readonly class DatabaseVerificationRepository implements VerificationRepos
      */
     private function delete(Builder $query): int
     {
-        return $query->delete();
+        $deleted = $query->delete();
+
+        return is_numeric($deleted) ? (int) $deleted : 0;
     }
 
     private function toRecord(Verification $model): VerificationRecord

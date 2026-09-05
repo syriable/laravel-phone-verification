@@ -32,47 +32,47 @@ class PhoneVerification extends Facade
 
     public static function send(string $phone): SendResult
     {
-        return static::sms()->send($phone);
+        return self::sms()->send($phone);
     }
 
     public static function resend(string $phone): SendResult
     {
-        return static::sms()->resend($phone);
+        return self::sms()->resend($phone);
     }
 
     public static function verify(string $phone, string $code, ?Model $for = null): VerificationResult
     {
-        return static::sms()->verify($phone, $code, $for);
+        return self::sms()->verify($phone, $code, $for);
     }
 
     public static function status(string $phone): VerificationStatus
     {
-        return static::sms()->status($phone);
+        return self::sms()->status($phone);
     }
 
     public static function isVerified(string $phone): bool
     {
-        return static::sms()->isVerified($phone);
+        return self::sms()->isVerified($phone);
     }
 
     public static function invalidate(string $phone): int
     {
-        return static::sms()->invalidate($phone);
+        return self::sms()->invalidate($phone);
     }
 
     public static function link(string $phone, Model $verifiable): bool
     {
-        return static::sms()->link($phone, $verifiable);
+        return self::sms()->link($phone, $verifiable);
     }
 
     public static function unlink(string $phone): int
     {
-        return static::sms()->unlink($phone);
+        return self::sms()->unlink($phone);
     }
 
     public static function linkedTo(string $phone): ?Model
     {
-        return static::sms()->linkedTo($phone);
+        return self::sms()->linkedTo($phone);
     }
 
     /**
@@ -80,7 +80,7 @@ class PhoneVerification extends Facade
      */
     public static function phoneFor(Model $verifiable): ?string
     {
-        return static::sms()->identifierFor($verifiable);
+        return self::sms()->identifierFor($verifiable);
     }
 
     private static function sms(): PendingChannel

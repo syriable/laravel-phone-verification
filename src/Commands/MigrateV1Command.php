@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Syriable\OtpVerification\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Database\ConnectionResolverInterface;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Str;
 use Syriable\OtpVerification\Channel;
 use Syriable\OtpVerification\Support\OtpVerificationConfig;
@@ -31,9 +31,9 @@ final class MigrateV1Command extends Command
 
     protected $description = 'Copy v1 phone verification links into the v2 verification_links table';
 
-    public function handle(ConnectionResolverInterface $connections, OtpVerificationConfig $config): int
+    public function handle(DatabaseManager $database, OtpVerificationConfig $config): int
     {
-        $connection = $connections->connection();
+        $connection = $database->connection();
 
         $source = $this->stringOption('from', 'phone_verification_links');
         $target = $config->linksTable();

@@ -37,10 +37,10 @@ final class FakeSender implements OtpSender
      */
     public function codesFor(string $identifier, ?Channel $channel = null): array
     {
-        return array_values(array_map(
+        return array_map(
             static fn (OtpMessage $message): string => $message->code,
             $this->messagesFor($identifier, $channel),
-        ));
+        );
     }
 
     /**
@@ -131,14 +131,14 @@ final class FakeSender implements OtpSender
 
     public function assertNothingSent(): void
     {
-        Assert::assertSame(0, count($this->sent), 'Expected no codes to be sent, but some were.');
+        Assert::assertCount(0, $this->sent, 'Expected no codes to be sent, but some were.');
     }
 
     public function assertNothingSentOn(Channel $channel): void
     {
-        Assert::assertSame(
+        Assert::assertCount(
             0,
-            count($this->sent($channel)),
+            $this->sent($channel),
             "Expected no codes to be sent on the [{$channel->value}] channel, but some were."
         );
     }

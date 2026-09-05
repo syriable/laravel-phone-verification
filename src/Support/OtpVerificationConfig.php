@@ -218,7 +218,7 @@ final readonly class OtpVerificationConfig
     {
         $queue = $this->channelValue($channel, 'queue') ?? false;
 
-        if ($queue === false || $queue === null) {
+        if ($queue === false) {
             return null;
         }
 
