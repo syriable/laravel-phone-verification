@@ -13,7 +13,7 @@ use Syriable\OtpVerification\Support\OtpVerificationConfig;
 /**
  * The v1 trait, kept as a thin composition over the generic one.
  *
- * @deprecated since 2.0, removed in 3.0 — use HasVerifiedIdentifiers
+ * @deprecated since 1.0, removed in 2.0 — use HasVerifiedIdentifiers
  *
  * @mixin Model
  */
@@ -22,7 +22,7 @@ trait HasVerifiedPhone
     use HasVerifiedIdentifiers;
 
     /**
-     * @deprecated since 2.0, removed in 3.0 — use verificationLinks()
+     * @deprecated since 1.0, removed in 2.0 — use verificationLinks()
      *
      * @return MorphOne<VerificationLink, $this>
      */

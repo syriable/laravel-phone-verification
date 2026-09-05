@@ -58,7 +58,7 @@ trait HasVerifiedIdentifiers
     }
 
     /**
-     * @deprecated since 2.0, removed in 3.0 — use verifiedIdentifier(Channel::sms())
+     * @deprecated since 1.0, removed in 2.0 — use verifiedIdentifier(Channel::sms())
      */
     public function verifiedPhoneNumber(): ?string
     {
@@ -66,7 +66,7 @@ trait HasVerifiedIdentifiers
     }
 
     /**
-     * @deprecated since 2.0, removed in 3.0 — use hasVerifiedIdentifier(Channel::sms())
+     * @deprecated since 1.0, removed in 2.0 — use hasVerifiedIdentifier(Channel::sms())
      */
     public function hasVerifiedPhoneNumber(): bool
     {

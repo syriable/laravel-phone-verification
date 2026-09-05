@@ -15,6 +15,11 @@ use Syriable\OtpVerification\Support\VerificationSubject;
  * address is ever written to the cache. The channel stays readable, because
  * it is not sensitive and makes keys debuggable — and it keeps each channel's
  * allowance independent.
+ *
+ * The purpose is deliberately NOT part of the key. The rolling window is a
+ * cost and abuse control, and keying it per purpose would let anyone who can
+ * influence a purpose value multiply your SMS spend. The resend cooldown is
+ * the per-purpose clock; this one is per identity and channel.
  */
 final readonly class CacheSendRateLimiter implements SendRateLimiter
 {

@@ -29,6 +29,7 @@ final readonly class DatabaseVerificationRepository implements VerificationRepos
         $model = $this->newQuery()->create([
             'identifier' => $subject->identifier,
             'channel' => $subject->channel,
+            'purpose' => $subject->purpose,
             'code_hash' => $codeHash,
             'expires_at' => $expiresAt,
             'attempts' => 0,
@@ -129,7 +130,8 @@ final readonly class DatabaseVerificationRepository implements VerificationRepos
     {
         return $this->newQuery()
             ->where('identifier', $subject->identifier)
-            ->where('channel', $subject->channel->value);
+            ->where('channel', $subject->channel->value)
+            ->where('purpose', $subject->purpose);
     }
 
     /**
@@ -159,6 +161,7 @@ final readonly class DatabaseVerificationRepository implements VerificationRepos
             id: $model->id,
             identifier: $model->identifier,
             channel: $model->channel,
+            purpose: $model->purpose,
             codeHash: $model->code_hash,
             expiresAt: $model->expires_at,
             verifiedAt: $model->verified_at,

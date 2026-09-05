@@ -14,6 +14,7 @@ use Syriable\OtpVerification\Generators\RandomOtpGenerator;
 use Syriable\OtpVerification\RateLimiting\CacheSendRateLimiter;
 use Syriable\OtpVerification\Senders\QueuedOtpSender;
 use Syriable\OtpVerification\Support\ChannelConfig;
+use Syriable\OtpVerification\Support\CodeOptions;
 use Syriable\OtpVerification\Support\OtpVerificationConfig;
 use Syriable\OtpVerification\Support\QueueConfig;
 
@@ -74,11 +75,18 @@ final readonly class ChannelResolver
         return $this->container->make($sender);
     }
 
-    public function generator(Channel $channel): OtpGenerator
+    public function generator(Channel $channel, ?CodeOptions $options = null): OtpGenerator
     {
         $config = $this->config($channel);
 
         if ($config->generator !== null) {
+            // Two conflicting instructions about the same thing is a
+            // programmer error, so it fails loudly rather than silently
+            // picking one.
+            if ($options instanceof CodeOptions && $options->overridesShape()) {
+                throw InvalidConfiguration::codeShapeWithCustomGenerator($channel->value);
+            }
+
             return $this->make(
                 "channels.{$channel->value}.otp.generator",
                 $config->generator,
@@ -86,7 +94,12 @@ final readonly class ChannelResolver
             );
         }
 
-        return new RandomOtpGenerator($config->otpLength, $config->otpCharacters);
+        $options ??= new CodeOptions;
+
+        return new RandomOtpGenerator(
+            $options->resolveLength($config),
+            $options->resolveCharacters($config),
+        );
     }
 
     public function rateLimiter(Channel $channel): SendRateLimiter

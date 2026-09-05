@@ -26,6 +26,7 @@ abstract class TestCase extends Orchestra
 
         $this->runPackageMigration('create_verifications_table.php.stub');
         $this->runPackageMigration('create_verification_links_table.php.stub');
+        $this->runPackageMigration('add_purpose_to_verifications_table.php.stub');
         $this->createUsersTable();
     }
 

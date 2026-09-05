@@ -18,6 +18,7 @@ use Syriable\OtpVerification\Channel;
  * @property string $id
  * @property string $identifier
  * @property Channel $channel
+ * @property string $purpose
  * @property string $code_hash
  * @property CarbonImmutable $expires_at
  * @property CarbonImmutable|null $verified_at

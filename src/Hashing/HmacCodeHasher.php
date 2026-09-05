@@ -20,7 +20,8 @@ use Syriable\OtpVerification\Support\VerificationSubject;
  * always produce distinct messages.
  *
  * Binding the channel is what stops a hash issued for an address on one
- * channel being replayed against the same address on another.
+ * channel being replayed against the same address on another; binding the
+ * purpose does the same across two flows that share an address and a channel.
  */
 final readonly class HmacCodeHasher implements CodeHasher
 {
@@ -44,9 +45,20 @@ final readonly class HmacCodeHasher implements CodeHasher
 
     private function canonical(VerificationSubject $subject, string $code): string
     {
-        return $this->field($subject->channel->value)
+        $message = $this->field($subject->channel->value)
             .$this->field($subject->identifier)
             .$this->field($code);
+
+        // The purpose is appended only when it is not the default, so every
+        // hash written before purposes existed still verifies. Length-prefixed
+        // framing stays injective across both shapes: the field count is
+        // recoverable from the bytes, so a three-field message can never equal
+        // a four-field one.
+        if (! $subject->hasDefaultPurpose()) {
+            $message .= $this->field($subject->purpose);
+        }
+
+        return $message;
     }
 
     private function field(string $value): string

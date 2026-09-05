@@ -36,6 +36,15 @@ final readonly class OtpMessage
     }
 
     /**
+     * What this code is for. Use it to pick the right template when one sender
+     * serves several flows on the same channel.
+     */
+    public function purpose(): string
+    {
+        return $this->subject->purpose;
+    }
+
+    /**
      * Whole minutes until the code expires, never negative — for copy such as
      * "this code expires in 5 minutes".
      */

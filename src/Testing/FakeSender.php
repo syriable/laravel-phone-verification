@@ -35,20 +35,20 @@ final class FakeSender implements OtpSender
      *
      * @return list<string>
      */
-    public function codesFor(string $identifier, ?Channel $channel = null): array
+    public function codesFor(string $identifier, ?Channel $channel = null, ?string $purpose = null): array
     {
         return array_map(
             static fn (OtpMessage $message): string => $message->code,
-            $this->messagesFor($identifier, $channel),
+            $this->messagesFor($identifier, $channel, $purpose),
         );
     }
 
     /**
      * The most recently sent code for an identifier.
      */
-    public function lastCodeFor(string $identifier, ?Channel $channel = null): ?string
+    public function lastCodeFor(string $identifier, ?Channel $channel = null, ?string $purpose = null): ?string
     {
-        $codes = $this->codesFor($identifier, $channel);
+        $codes = $this->codesFor($identifier, $channel, $purpose);
 
         return $codes === [] ? null : $codes[count($codes) - 1];
     }
@@ -70,11 +70,51 @@ final class FakeSender implements OtpSender
         ));
     }
 
-    public function sentCount(?string $identifier = null, ?Channel $channel = null): int
+    public function sentCount(?string $identifier = null, ?Channel $channel = null, ?string $purpose = null): int
     {
         return $identifier === null
-            ? count($this->sent($channel))
-            : count($this->messagesFor($identifier, $channel));
+            ? count($this->sentFor($purpose, $channel))
+            : count($this->messagesFor($identifier, $channel, $purpose));
+    }
+
+    /**
+     * Every message captured for one purpose, oldest first.
+     *
+     * @return list<OtpMessage>
+     */
+    public function sentFor(?string $purpose, ?Channel $channel = null): array
+    {
+        $messages = $this->sent($channel);
+
+        if ($purpose === null) {
+            return $messages;
+        }
+
+        return array_values(array_filter(
+            $messages,
+            static fn (OtpMessage $message): bool => $message->purpose() === $purpose,
+        ));
+    }
+
+    public function assertSentForPurpose(string $purpose, ?int $times = null): void
+    {
+        $count = count($this->sentFor($purpose));
+
+        if ($times === null) {
+            Assert::assertGreaterThan(
+                0,
+                $count,
+                "Expected a code to be sent for the [{$purpose}] purpose, but none was."
+            );
+
+            return;
+        }
+
+        Assert::assertSame(
+            $times,
+            $count,
+            "Expected [{$times}] code(s) sent for the [{$purpose}] purpose, but [{$count}] were."
+        );
     }
 
     /**
@@ -151,12 +191,13 @@ final class FakeSender implements OtpSender
     /**
      * @return list<OtpMessage>
      */
-    private function messagesFor(string $identifier, ?Channel $channel): array
+    private function messagesFor(string $identifier, ?Channel $channel, ?string $purpose = null): array
     {
         return array_values(array_filter(
             $this->sent,
             static fn (OtpMessage $message): bool => $message->identifier() === $identifier
-                && (! $channel instanceof Channel || $message->channel()->is($channel)),
+                && (! $channel instanceof Channel || $message->channel()->is($channel))
+                && ($purpose === null || $message->purpose() === $purpose),
         ));
     }
 }
