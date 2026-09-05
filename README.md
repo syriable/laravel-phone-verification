@@ -38,14 +38,14 @@ composer require syriable/laravel-otp-verification
 Publish and run the migrations:
 
 ```bash
-php artisan vendor:publish --tag="laravel-otp-verification-migrations"
+php artisan vendor:publish --tag="otp-verification-migrations"
 php artisan migrate
 ```
 
 Publish the config file:
 
 ```bash
-php artisan vendor:publish --tag="laravel-otp-verification-config"
+php artisan vendor:publish --tag="otp-verification-config"
 ```
 
 Then point each channel you use at a sender class of your own (see [Senders](#senders)):
