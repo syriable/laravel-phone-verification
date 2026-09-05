@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Contracts;
+namespace Syriable\OtpVerification\Contracts;
 
 use Carbon\CarbonImmutable;
-use Syriable\PhoneVerification\Support\VerificationRecord;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Support\VerificationRecord;
+use Syriable\OtpVerification\Support\VerificationSubject;
 
 interface VerificationRepository
 {
@@ -13,28 +15,29 @@ interface VerificationRepository
      * Persist a new verification record.
      */
     public function create(
-        string $phone,
+        VerificationSubject $subject,
         string $codeHash,
         CarbonImmutable $expiresAt,
         int $resendCount = 0,
     ): VerificationRecord;
 
     /**
-     * The most recent unverified record for the phone number, if any.
-     * Implementations must guarantee at most one unverified record exists
-     * per phone number (invalidate() runs before every create()).
+     * The most recent unverified record for the subject, if any.
+     *
+     * Implementations must guarantee at most one unverified record exists per
+     * subject; invalidate() runs before every create().
      */
-    public function findActive(string $phone): ?VerificationRecord;
+    public function findActive(VerificationSubject $subject): ?VerificationRecord;
 
     /**
-     * The most recent successfully verified record for the phone number.
+     * The most recent successfully verified record for the subject.
      */
-    public function findVerified(string $phone): ?VerificationRecord;
+    public function findVerified(VerificationSubject $subject): ?VerificationRecord;
 
     /**
-     * When a code was last sent to the phone number, verified or not.
+     * When a code was last sent to the subject, verified or not.
      */
-    public function lastSentAt(string $phone): ?CarbonImmutable;
+    public function lastSentAt(VerificationSubject $subject): ?CarbonImmutable;
 
     /**
      * Atomically increment the attempt counter and return the fresh record.
@@ -47,24 +50,25 @@ interface VerificationRepository
     public function markVerified(VerificationRecord $record, CarbonImmutable $verifiedAt): VerificationRecord;
 
     /**
-     * Delete all unverified records for the phone number.
+     * Delete all unverified records for the subject.
      *
      * @return int the number of deleted records
      */
-    public function invalidate(string $phone): int;
+    public function invalidate(VerificationSubject $subject): int;
 
     /**
-     * Delete records that expired before $now, and verified records older
-     * than $verifiedBefore.
+     * Delete records that expired before $now, and verified records older than
+     * $verifiedBefore. Retention differs per channel, so callers prune one
+     * channel at a time; passing null prunes every channel at the same cutoff.
      *
      * @return int the number of deleted records
      */
-    public function prune(CarbonImmutable $now, CarbonImmutable $verifiedBefore): int;
+    public function prune(CarbonImmutable $now, CarbonImmutable $verifiedBefore, ?Channel $channel = null): int;
 
     /**
-     * Delete every record, or all records for a single phone number.
+     * Delete every record, or only those for one subject or one channel.
      *
      * @return int the number of deleted records
      */
-    public function clear(?string $phone = null): int;
+    public function clear(?VerificationSubject $subject = null, ?Channel $channel = null): int;
 }

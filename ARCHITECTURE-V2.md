@@ -143,11 +143,29 @@ Consequences threaded through everything below: the rename is free, the deprecat
 - **Option C — a `Channel` interface with one class per channel:** typed and open. Rejected: heavyweight (a class per channel), awkward to persist and to use as an array key, and it invites behaviour onto a type that should be a pure identity.
 - **Option D — value object (chosen):** typed parameters (`Channel $channel`), open (`Channel::of('whatsapp')`), one-line persistence (`->value`), and near-enum call-site ergonomics.
 
-**Reason:** The value object satisfies both forces at once. Flyweight caching (one instance per value, private constructor) means `===` and `match($channel)` behave exactly as they would for an enum, so the ergonomic gap versus Option A is one character of syntax (`Channel::sms()` vs `Channel::Sms`). Format validation lives in the VO and has **no container or config dependency**, so it stays unit-testable; whether a channel is *configured* is validated separately by `ChannelResolver`, which throws `InvalidConfiguration::unknownChannel()` naming the registered channels.
+**Reason:** The value object satisfies both forces at once. The ergonomic gap versus Option A is one character of syntax (`Channel::sms()` vs `Channel::Sms`). *(Superseded in part by ADR-015: this ADR originally claimed flyweight interning would make `===` and `match($channel)` work like an enum's. PHP forbids static properties in a `readonly` class, so that is not possible — channels compare by value.)* Format validation lives in the VO and has **no container or config dependency**, so it stays unit-testable; whether a channel is *configured* is validated separately by `ChannelResolver`, which throws `InvalidConfiguration::unknownChannel()` naming the registered channels.
 
-**Trade-offs:** No compile-time exhaustiveness — a `match` over channels needs a `default` arm, and static analysis cannot prove all channels are handled. `Channel::SMS` / `Channel::MAIL` string constants are provided for config files and array keys. A custom Eloquent cast (`Casts\AsChannel`) is needed where a native enum cast would have been free.
+**Trade-offs:** No compile-time exhaustiveness — a `match` over channels needs a `default` arm, and static analysis cannot prove all channels are handled. Channels also compare by value rather than identity (see ADR-015). `Channel::SMS` / `Channel::MAIL` string constants are provided for config files and array keys. A custom Eloquent cast (`Casts\AsChannel`) is needed where a native enum cast would have been free.
 
 **Impact:** **MAJOR** — a new required concept in most public signatures. Public surface: `Channel` is public and stable; consumers may call `Channel::of()` with their own names. Upgrade impact: mechanical for v1 callers (add a channel argument or rely on the default). Extension seam: registering `whatsapp` is a config edit plus a sender class, with no package change.
+
+---
+
+### ADR-015: Channels compare by value, not identity *(supersedes part of ADR-002)*
+**Decision:** `Channel` stays `final readonly` and is **not** interned. Comparison is `$a->is($b)`, `$a->isSms()`, or `match ($channel->value)`. `===` between two separately constructed instances of the same channel is `false`; `==` is `true`.
+
+**Context:** ADR-002 asserted that flyweight caching — a private constructor plus a static `array<string, self>` of instances — would give `Channel` enum-like identity semantics, so `===` and `match ($channel)` would work as they do for a native enum. That claim is wrong. PHP forbids static properties in a `readonly` class; `final readonly class Channel { private static array $cache = []; }` is a fatal error (`Readonly property Channel::$cache cannot have default value`), verified against PHP 8.4.19 before writing the class.
+
+**Alternatives considered:**
+- **Option A — drop `readonly` from the class and keep per-property `readonly`, so a static cache is legal:** preserves the identity semantics ADR-002 promised. Rejected on two counts: it breaks the house rule that value objects are `final readonly` (and the architecture test that enforces it), and the cache is unbounded — `Channel::of()` accepts any well-formed name, so channel names reaching it from request data would grow a static array for the process lifetime.
+- **Option B — move the cache into a separate non-readonly registry class:** keeps both the identity semantics and `final readonly`. Rejected as machinery serving one syntactic convenience, with the same unbounded-growth question.
+- **Option C — no interning; compare by value (chosen).**
+
+**Reason:** Value comparison is what a value object should offer anyway, and the package already needed `is()`, `isSms()` and `isMail()` for readable call sites. The cost is confined to one idiom — `match ($channel->value)` instead of `match ($channel)` — which reads no worse and works identically for user-registered channels.
+
+**Trade-offs:** A consumer who reaches for `===` out of enum habit gets a silently `false` comparison. Mitigated by making `is()` the documented comparison in the class docblock and the README, and by the two predicate methods covering the built-in channels. This is the sharpest edge of choosing an open channel set over a closed enum, and it is recorded here rather than discovered later.
+
+**Impact:** **MAJOR** as part of v2 (no v1 equivalent exists). No change to the public surface relative to what shipped — only to a claim made about it during Phase 1. Covered by a test asserting `is()` is true and `===` is not for two instances of the same channel.
 
 ---
 

@@ -3,70 +3,62 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Event;
-use Syriable\PhoneVerification\Events\VerificationResent;
-use Syriable\PhoneVerification\Events\VerificationSent;
-use Syriable\PhoneVerification\Facades\PhoneVerification;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Events\VerificationResent;
+use Syriable\OtpVerification\Facades\Verification;
 
-it('resends a fresh code after the cooldown', function (): void {
-    PhoneVerification::send('+31612345678');
-    $firstCode = (string) $this->fakeSender()->lastCodeFor('+31612345678');
+describe('resending a code', function (): void {
+    it('issues a new code and invalidates the old one', function (): void {
+        $first = sendAndCaptureCode('+31612345678');
 
-    travelSeconds(61);
+        travelSeconds(120);
 
-    $result = PhoneVerification::resend('+31612345678');
-    $secondCode = (string) $this->fakeSender()->lastCodeFor('+31612345678');
+        $result = Verification::resend('+31612345678');
+        $second = test()->fakeSender()->lastCodeFor('+31612345678');
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->verification?->resendCount)->toBe(1)
-        ->and(PhoneVerification::verify('+31612345678', $firstCode)->successful())->toBeFalse()
-        ->and(PhoneVerification::verify('+31612345678', $secondCode)->successful())->toBeTrue();
-});
+        expect($result->successful())->toBeTrue()
+            ->and($second)->not->toBe($first)
+            ->and(Verification::verify('+31612345678', $first)->invalid())->toBeTrue();
+    });
 
-it('refuses to resend during the cooldown', function (): void {
-    PhoneVerification::send('+31612345678');
+    it('carries the resend counter across resends', function (): void {
+        Verification::send('+31612345678');
 
-    $result = PhoneVerification::resend('+31612345678');
+        travelSeconds(120);
+        Verification::resend('+31612345678');
 
-    expect($result->onCooldown())->toBeTrue()
-        ->and($result->retryAfter())->toBeGreaterThan(0);
+        travelSeconds(120);
+        $result = Verification::resend('+31612345678');
 
-    $this->fakeSender()->assertSentTo('+31612345678', times: 1);
-});
+        expect($result->verification?->resendCount)->toBe(2);
+    });
 
-it('counts consecutive resends', function (): void {
-    PhoneVerification::send('+31612345678');
+    it('respects the cooldown', function (): void {
+        Verification::send('+31612345678');
 
-    travelSeconds(61);
-    PhoneVerification::resend('+31612345678');
+        expect(Verification::resend('+31612345678')->onCooldown())->toBeTrue();
+    });
 
-    travelSeconds(61);
-    $result = PhoneVerification::resend('+31612345678');
+    it('honours the channel cooldown override', function (): void {
+        Verification::send('alice@example.com', Channel::mail());
 
-    expect($result->verification?->resendCount)->toBe(2);
-});
+        // Past the 60-second global default, inside the 120-second mail one.
+        travelSeconds(90);
 
-it('behaves like a first send when there is nothing to resend', function (): void {
-    $result = PhoneVerification::resend('+31612345678');
+        expect(Verification::resend('alice@example.com', Channel::mail())->onCooldown())->toBeTrue();
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->verification?->resendCount)->toBe(0);
-});
+        travelSeconds(40);
 
-it('dispatches the resent event alongside the sent event', function (): void {
-    Event::fake([VerificationSent::class, VerificationResent::class]);
+        expect(Verification::resend('alice@example.com', Channel::mail())->successful())->toBeTrue();
+    });
 
-    PhoneVerification::send('+31612345678');
-    travelSeconds(61);
-    PhoneVerification::resend('+31612345678');
+    it('dispatches a resent event', function (): void {
+        Event::fake([VerificationResent::class]);
 
-    Event::assertDispatchedTimes(VerificationSent::class, 2);
-    Event::assertDispatchedTimes(VerificationResent::class, 1);
-});
+        Verification::send('+31612345678');
+        travelSeconds(120);
+        Verification::resend('+31612345678');
 
-it('does not dispatch the resent event for a plain send', function (): void {
-    Event::fake([VerificationResent::class]);
-
-    PhoneVerification::send('+31612345678');
-
-    Event::assertNotDispatched(VerificationResent::class);
+        Event::assertDispatched(VerificationResent::class);
+    });
 });

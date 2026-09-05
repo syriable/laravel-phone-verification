@@ -2,14 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Tests;
+namespace Syriable\OtpVerification\Tests;
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Schema;
 use Orchestra\Testbench\TestCase as Orchestra;
-use Syriable\PhoneVerification\PhoneVerificationServiceProvider;
-use Syriable\PhoneVerification\Testing\FakeSender;
+use Syriable\OtpVerification\OtpVerificationServiceProvider;
+use Syriable\OtpVerification\Testing\FakeSender;
 
 abstract class TestCase extends Orchestra
 {
@@ -17,22 +18,31 @@ abstract class TestCase extends Orchestra
     {
         parent::setUp();
 
+        // One shared instance captures every channel.
         $this->app->singleton(FakeSender::class);
 
-        config()->set('phone-verification.sender', FakeSender::class);
+        config()->set('otp-verification.channels.sms.sender', FakeSender::class);
+        config()->set('otp-verification.channels.mail.sender', FakeSender::class);
 
-        $this->runPackageMigration('create_phone_verifications_table.php.stub');
-        $this->runPackageMigration('create_phone_verification_links_table.php.stub');
+        $this->runPackageMigration('create_verifications_table.php.stub');
+        $this->runPackageMigration('create_verification_links_table.php.stub');
         $this->createUsersTable();
     }
 
+    /**
+     * @param  Application  $app
+     * @return array<int, class-string>
+     */
     protected function getPackageProviders($app): array
     {
         return [
-            PhoneVerificationServiceProvider::class,
+            OtpVerificationServiceProvider::class,
         ];
     }
 
+    /**
+     * @param  Application  $app
+     */
     protected function getEnvironmentSetUp($app): void
     {
         config()->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
@@ -45,7 +55,7 @@ abstract class TestCase extends Orchestra
         return $this->app->make(FakeSender::class);
     }
 
-    private function runPackageMigration(string $fileName): void
+    protected function runPackageMigration(string $fileName): void
     {
         $migration = include __DIR__."/../database/migrations/{$fileName}";
 
@@ -59,6 +69,8 @@ abstract class TestCase extends Orchestra
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
+            $table->string('email')->nullable();
+            $table->timestamp('email_verified_at')->nullable();
             $table->timestamps();
         });
     }

@@ -2,19 +2,23 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Tests\Fixtures;
+namespace Syriable\OtpVerification\Tests\Fixtures;
 
-use Syriable\PhoneVerification\Contracts\CodeHasher;
+use Syriable\OtpVerification\Contracts\CodeHasher;
+use Syriable\OtpVerification\Support\VerificationSubject;
 
+/**
+ * Deliberately insecure. Exists only to prove the hasher is swappable.
+ */
 final class PlainCodeHasher implements CodeHasher
 {
-    public function hash(string $phone, string $code): string
+    public function hash(VerificationSubject $subject, string $code): string
     {
-        return "plain:{$phone}:{$code}";
+        return $subject->channel->value.'|'.$subject->identifier.'|'.$code;
     }
 
-    public function verify(string $phone, string $code, string $hash): bool
+    public function verify(VerificationSubject $subject, string $code, string $hash): bool
     {
-        return hash_equals($hash, $this->hash($phone, $code));
+        return $this->hash($subject, $code) === $hash;
     }
 }

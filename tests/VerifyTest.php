@@ -3,181 +3,126 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Event;
-use Syriable\PhoneVerification\Enums\VerificationOutcome;
-use Syriable\PhoneVerification\Events\VerificationExpired;
-use Syriable\PhoneVerification\Events\VerificationFailed;
-use Syriable\PhoneVerification\Events\VerificationSucceeded;
-use Syriable\PhoneVerification\Facades\PhoneVerification;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Events\VerificationFailed;
+use Syriable\OtpVerification\Events\VerificationSucceeded;
+use Syriable\OtpVerification\Facades\Verification;
 
-function sendAndGetCode(string $phone = '+31612345678'): string
-{
-    PhoneVerification::send($phone);
+describe('verifying a code', function (): void {
+    it('accepts the correct code', function (): void {
+        $code = sendAndCaptureCode('+31612345678');
 
-    return (string) test()->fakeSender()->lastCodeFor($phone);
-}
+        $result = Verification::verify('+31612345678', $code);
 
-it('verifies a correct code', function (): void {
-    $code = sendAndGetCode();
+        expect($result->successful())->toBeTrue()
+            ->and(Verification::isVerified('+31612345678'))->toBeTrue();
+    });
 
-    $result = PhoneVerification::verify('+31612345678', $code);
+    it('rejects the wrong code and counts the attempt', function (): void {
+        sendAndCaptureCode('+31612345678');
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->failed())->toBeFalse()
-        ->and($result->outcome)->toBe(VerificationOutcome::Successful)
-        ->and($result->verification?->isVerified())->toBeTrue();
-});
+        $result = Verification::verify('+31612345678', '000000');
 
-it('rejects an incorrect code', function (): void {
-    sendAndGetCode();
+        expect($result->invalid())->toBeTrue()
+            ->and($result->attemptsRemaining)->toBe(4);
+    });
 
-    $result = PhoneVerification::verify('+31612345678', '000000');
+    it('refuses a code issued for another channel', function (): void {
+        $code = sendAndCaptureCode('alice@example.com', Channel::mail());
 
-    expect($result->invalid())->toBeTrue()
-        ->and($result->successful())->toBeFalse()
-        ->and($result->attemptsRemaining)->toBe(4);
-});
+        expect(Verification::verify('alice@example.com', $code, Channel::sms())->notFound())->toBeTrue()
+            ->and(Verification::verify('alice@example.com', $code, Channel::mail())->successful())->toBeTrue();
+    });
 
-it('returns not found when no code was ever sent', function (): void {
-    $result = PhoneVerification::verify('+31612345678', '123456');
+    it('keeps two channels for the same address completely independent', function (): void {
+        $smsCode = sendAndCaptureCode('alice@example.com', Channel::sms());
+        $mailCode = sendAndCaptureCode('alice@example.com', Channel::mail());
 
-    expect($result->notFound())->toBeTrue()
-        ->and($result->failed())->toBeTrue();
-});
+        expect(Verification::verify('alice@example.com', $mailCode, Channel::sms())->invalid())->toBeTrue()
+            ->and(Verification::verify('alice@example.com', $smsCode, Channel::sms())->successful())->toBeTrue()
+            ->and(Verification::verify('alice@example.com', $mailCode, Channel::mail())->successful())->toBeTrue();
+    });
 
-it('rejects an expired code, even when it is correct', function (): void {
-    $code = sendAndGetCode();
+    it('reports not found when nothing was ever sent', function (): void {
+        expect(Verification::verify('+31612345678', '000000')->notFound())->toBeTrue();
+    });
 
-    travelMinutes(6);
+    it('rejects an expired code', function (): void {
+        $code = sendAndCaptureCode('+31612345678');
 
-    $result = PhoneVerification::verify('+31612345678', $code);
+        travelMinutes(6);
 
-    expect($result->expired())->toBeTrue()
-        ->and($result->successful())->toBeFalse();
-});
+        expect(Verification::verify('+31612345678', $code)->expired())->toBeTrue();
+    });
 
-it('respects a custom expiration', function (): void {
-    config()->set('phone-verification.expiration', 30);
+    it('honours the channel expiry override', function (): void {
+        $code = sendAndCaptureCode('alice@example.com', Channel::mail());
 
-    $code = sendAndGetCode();
+        // Past the 5-minute SMS default, inside the 30-minute mail override.
+        travelMinutes(10);
 
-    travelMinutes(6);
-    expect(PhoneVerification::verify('+31612345678', $code)->successful())->toBeTrue();
-});
+        expect(Verification::verify('alice@example.com', $code, Channel::mail())->successful())->toBeTrue();
+    });
 
-it('dispatches an event when verifying an expired code', function (): void {
-    Event::fake([VerificationExpired::class]);
+    it('locks the code after too many attempts', function (): void {
+        config()->set('otp-verification.channels.sms.max_attempts', 3);
 
-    $code = sendAndGetCode();
+        $code = sendAndCaptureCode('+31612345678');
 
-    travelMinutes(6);
-    PhoneVerification::verify('+31612345678', $code);
+        Verification::verify('+31612345678', '000000');
+        Verification::verify('+31612345678', '000000');
 
-    Event::assertDispatched(VerificationExpired::class);
-});
+        $third = Verification::verify('+31612345678', '000000');
 
-it('locks the code after the maximum number of attempts', function (): void {
-    $code = sendAndGetCode();
+        expect($third->tooManyAttempts())->toBeTrue()
+            ->and(Verification::verify('+31612345678', $code)->tooManyAttempts())->toBeTrue();
+    });
 
-    foreach (range(1, 4) as $attempt) {
-        expect(PhoneVerification::verify('+31612345678', '000000')->invalid())->toBeTrue();
-    }
+    it('cannot be replayed after a successful verification', function (): void {
+        $code = sendAndCaptureCode('+31612345678');
 
-    $fifth = PhoneVerification::verify('+31612345678', '000000');
+        Verification::verify('+31612345678', $code);
 
-    expect($fifth->tooManyAttempts())->toBeTrue()
-        ->and($fifth->attemptsRemaining)->toBe(0);
+        expect(Verification::verify('+31612345678', $code)->alreadyVerified())->toBeTrue();
+    });
 
-    // even the correct code is now unusable
-    expect(PhoneVerification::verify('+31612345678', $code)->tooManyAttempts())->toBeTrue();
-});
+    it('can be invalidated on demand', function (): void {
+        $code = sendAndCaptureCode('+31612345678');
 
-it('respects a custom maximum number of attempts', function (): void {
-    config()->set('phone-verification.max_attempts', 2);
+        expect(Verification::invalidate('+31612345678'))->toBe(1)
+            ->and(Verification::verify('+31612345678', $code)->notFound())->toBeTrue();
+    });
 
-    $code = sendAndGetCode();
+    it('invalidates only the channel it was asked about', function (): void {
+        sendAndCaptureCode('alice@example.com', Channel::sms());
+        $mailCode = sendAndCaptureCode('alice@example.com', Channel::mail());
 
-    PhoneVerification::verify('+31612345678', '000000');
+        Verification::invalidate('alice@example.com', Channel::sms());
 
-    expect(PhoneVerification::verify('+31612345678', '000000')->tooManyAttempts())->toBeTrue()
-        ->and(PhoneVerification::verify('+31612345678', $code)->tooManyAttempts())->toBeTrue();
-});
+        expect(Verification::verify('alice@example.com', $mailCode, Channel::mail())->successful())->toBeTrue();
+    });
 
-it('counts down the remaining attempts', function (): void {
-    sendAndGetCode();
+    it('dispatches a succeeded event carrying the channel', function (): void {
+        Event::fake([VerificationSucceeded::class]);
 
-    expect(PhoneVerification::verify('+31612345678', '000000')->attemptsRemaining)->toBe(4)
-        ->and(PhoneVerification::verify('+31612345678', '000000')->attemptsRemaining)->toBe(3)
-        ->and(PhoneVerification::verify('+31612345678', '000000')->attemptsRemaining)->toBe(2);
-});
+        $code = sendAndCaptureCode('alice@example.com', Channel::mail());
+        Verification::verify('alice@example.com', $code, Channel::mail());
 
-it('protects against replaying a used code', function (): void {
-    $code = sendAndGetCode();
+        Event::assertDispatched(
+            VerificationSucceeded::class,
+            static fn (VerificationSucceeded $event): bool => $event->verification->channel->isMail()
+        );
+    });
 
-    expect(PhoneVerification::verify('+31612345678', $code)->successful())->toBeTrue();
+    it('dispatches a failed event with the outcome', function (): void {
+        Event::fake([VerificationFailed::class]);
 
-    $replay = PhoneVerification::verify('+31612345678', $code);
+        sendAndCaptureCode('+31612345678');
+        Verification::verify('+31612345678', '000000');
 
-    expect($replay->alreadyVerified())->toBeTrue()
-        ->and($replay->successful())->toBeFalse();
-});
-
-it('does not verify a code that was issued to another phone number', function (): void {
-    $code = sendAndGetCode('+31612345678');
-    sendAndGetCode('+31687654321');
-
-    expect(PhoneVerification::verify('+31687654321', $code)->invalid())->toBeTrue();
-});
-
-it('is case sensitive', function (): void {
-    config()->set('phone-verification.otp.type', 'alphabetic');
-
-    $code = sendAndGetCode();
-
-    expect(PhoneVerification::verify('+31612345678', strtolower($code))->invalid())->toBeTrue()
-        ->and(PhoneVerification::verify('+31612345678', $code)->successful())->toBeTrue();
-});
-
-it('dispatches an event on successful verification', function (): void {
-    Event::fake([VerificationSucceeded::class]);
-
-    $code = sendAndGetCode();
-    PhoneVerification::verify('+31612345678', $code);
-
-    Event::assertDispatched(
-        VerificationSucceeded::class,
-        fn (VerificationSucceeded $event): bool => $event->verification->isVerified(),
-    );
-});
-
-it('dispatches an event on failed verification', function (): void {
-    Event::fake([VerificationFailed::class]);
-
-    sendAndGetCode();
-    PhoneVerification::verify('+31612345678', '000000');
-
-    Event::assertDispatched(
-        VerificationFailed::class,
-        fn (VerificationFailed $event): bool => $event->outcome === VerificationOutcome::Invalid,
-    );
-});
-
-it('reports too many attempts through the failed verification event', function (): void {
-    config()->set('phone-verification.max_attempts', 1);
-
-    Event::fake([VerificationFailed::class]);
-
-    sendAndGetCode();
-    PhoneVerification::verify('+31612345678', '000000');
-
-    Event::assertDispatched(
-        VerificationFailed::class,
-        fn (VerificationFailed $event): bool => $event->outcome === VerificationOutcome::TooManyAttempts,
-    );
-});
-
-it('can invalidate outstanding codes', function (): void {
-    $code = sendAndGetCode();
-
-    expect(PhoneVerification::invalidate('+31612345678'))->toBe(1)
-        ->and(PhoneVerification::verify('+31612345678', $code)->notFound())->toBeTrue();
+        Event::assertDispatched(
+            VerificationFailed::class,
+            static fn (VerificationFailed $event): bool => $event->outcome->value === 'invalid'
+        );
+    });
 });

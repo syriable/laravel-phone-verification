@@ -2,24 +2,33 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Repositories;
+namespace Syriable\OtpVerification\Repositories;
 
 use Carbon\CarbonImmutable;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
-use Syriable\PhoneVerification\Contracts\VerificationRepository;
-use Syriable\PhoneVerification\Models\PhoneVerification;
-use Syriable\PhoneVerification\Support\VerificationRecord;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Contracts\VerificationRepository;
+use Syriable\OtpVerification\Models\Verification;
+use Syriable\OtpVerification\Support\OtpVerificationConfig;
+use Syriable\OtpVerification\Support\VerificationRecord;
+use Syriable\OtpVerification\Support\VerificationSubject;
 
-final class DatabaseVerificationRepository implements VerificationRepository
+final readonly class DatabaseVerificationRepository implements VerificationRepository
 {
+    public function __construct(
+        private OtpVerificationConfig $config,
+    ) {}
+
     public function create(
-        string $phone,
+        VerificationSubject $subject,
         string $codeHash,
         CarbonImmutable $expiresAt,
         int $resendCount = 0,
     ): VerificationRecord {
-        $model = PhoneVerification::query()->create([
-            'phone' => $phone,
+        $model = $this->newQuery()->create([
+            'identifier' => $subject->identifier,
+            'channel' => $subject->channel,
             'code_hash' => $codeHash,
             'expires_at' => $expiresAt,
             'attempts' => 0,
@@ -29,9 +38,9 @@ final class DatabaseVerificationRepository implements VerificationRepository
         return $this->toRecord($model);
     }
 
-    public function findActive(string $phone): ?VerificationRecord
+    public function findActive(VerificationSubject $subject): ?VerificationRecord
     {
-        $model = $this->queryFor($phone)
+        $model = $this->queryFor($subject)
             ->whereNull('verified_at')
             ->latest()
             ->first();
@@ -39,9 +48,9 @@ final class DatabaseVerificationRepository implements VerificationRepository
         return $model === null ? null : $this->toRecord($model);
     }
 
-    public function findVerified(string $phone): ?VerificationRecord
+    public function findVerified(VerificationSubject $subject): ?VerificationRecord
     {
-        $model = $this->queryFor($phone)
+        $model = $this->queryFor($subject)
             ->whereNotNull('verified_at')
             ->latest('verified_at')
             ->first();
@@ -49,62 +58,93 @@ final class DatabaseVerificationRepository implements VerificationRepository
         return $model === null ? null : $this->toRecord($model);
     }
 
-    public function lastSentAt(string $phone): ?CarbonImmutable
+    public function lastSentAt(VerificationSubject $subject): ?CarbonImmutable
     {
-        $lastSentAt = $this->queryFor($phone)->max('created_at');
+        $lastSentAt = $this->queryFor($subject)->max('created_at');
 
-        return is_string($lastSentAt) ? CarbonImmutable::parse($lastSentAt) : null;
+        if ($lastSentAt instanceof DateTimeInterface) {
+            return CarbonImmutable::instance($lastSentAt);
+        }
+
+        return is_string($lastSentAt) && $lastSentAt !== ''
+            ? CarbonImmutable::parse($lastSentAt)
+            : null;
     }
 
     public function incrementAttempts(VerificationRecord $record): VerificationRecord
     {
-        PhoneVerification::query()->whereKey($record->id)->increment('attempts');
+        $this->newQuery()->whereKey($record->id)->increment('attempts');
 
-        return $this->toRecord(PhoneVerification::query()->findOrFail($record->id));
+        return $this->toRecord($this->newQuery()->findOrFail($record->id));
     }
 
     public function markVerified(VerificationRecord $record, CarbonImmutable $verifiedAt): VerificationRecord
     {
-        PhoneVerification::query()->whereKey($record->id)->update(['verified_at' => $verifiedAt]);
+        $this->newQuery()->whereKey($record->id)->update(['verified_at' => $verifiedAt]);
 
-        return $this->toRecord(PhoneVerification::query()->findOrFail($record->id));
+        return $this->toRecord($this->newQuery()->findOrFail($record->id));
     }
 
-    public function invalidate(string $phone): int
+    public function invalidate(VerificationSubject $subject): int
     {
-        return $this->delete($this->queryFor($phone)->whereNull('verified_at'));
+        return $this->delete($this->queryFor($subject)->whereNull('verified_at'));
     }
 
-    public function prune(CarbonImmutable $now, CarbonImmutable $verifiedBefore): int
+    public function prune(CarbonImmutable $now, CarbonImmutable $verifiedBefore, ?Channel $channel = null): int
     {
-        $expired = $this->delete(PhoneVerification::query()
+        $expired = $this->delete($this->scopeToChannel($this->newQuery(), $channel)
             ->whereNull('verified_at')
             ->where('expires_at', '<=', $now));
 
-        $staleVerified = $this->delete(PhoneVerification::query()
+        $staleVerified = $this->delete($this->scopeToChannel($this->newQuery(), $channel)
             ->whereNotNull('verified_at')
             ->where('verified_at', '<', $verifiedBefore));
 
         return $expired + $staleVerified;
     }
 
-    public function clear(?string $phone = null): int
+    public function clear(?VerificationSubject $subject = null, ?Channel $channel = null): int
     {
-        return $this->delete($phone === null
-            ? PhoneVerification::query()
-            : $this->queryFor($phone));
+        $query = $subject instanceof VerificationSubject
+            ? $this->queryFor($subject)
+            : $this->scopeToChannel($this->newQuery(), $channel);
+
+        return $this->delete($query);
     }
 
     /**
-     * @return Builder<PhoneVerification>
+     * @return Builder<Verification>
      */
-    private function queryFor(string $phone): Builder
+    private function newQuery(): Builder
     {
-        return PhoneVerification::query()->where('phone', $phone);
+        $model = $this->config->verificationModel();
+
+        return $model::query();
     }
 
     /**
-     * @param  Builder<PhoneVerification>  $query
+     * @return Builder<Verification>
+     */
+    private function queryFor(VerificationSubject $subject): Builder
+    {
+        return $this->newQuery()
+            ->where('identifier', $subject->identifier)
+            ->where('channel', $subject->channel->value);
+    }
+
+    /**
+     * @param  Builder<Verification>  $query
+     * @return Builder<Verification>
+     */
+    private function scopeToChannel(Builder $query, ?Channel $channel): Builder
+    {
+        return $channel instanceof Channel
+            ? $query->where('channel', $channel->value)
+            : $query;
+    }
+
+    /**
+     * @param  Builder<Verification>  $query
      */
     private function delete(Builder $query): int
     {
@@ -113,11 +153,12 @@ final class DatabaseVerificationRepository implements VerificationRepository
         return is_numeric($deleted) ? (int) $deleted : 0;
     }
 
-    private function toRecord(PhoneVerification $model): VerificationRecord
+    private function toRecord(Verification $model): VerificationRecord
     {
         return new VerificationRecord(
             id: $model->id,
-            phone: $model->phone,
+            identifier: $model->identifier,
+            channel: $model->channel,
             codeHash: $model->code_hash,
             expiresAt: $model->expires_at,
             verifiedAt: $model->verified_at,

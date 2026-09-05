@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Enums;
+namespace Syriable\OtpVerification\Enums;
 
 enum VerificationOutcome: string
 {
@@ -12,5 +12,5 @@ enum VerificationOutcome: string
     case TooManyAttempts = 'too_many_attempts';
     case AlreadyVerified = 'already_verified';
     case NotFound = 'not_found';
-    case PhoneTakenByAnotherAccount = 'phone_taken_by_another_account';
+    case IdentifierTakenByAnotherAccount = 'identifier_taken_by_another_account';
 }

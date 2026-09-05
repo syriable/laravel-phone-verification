@@ -2,72 +2,109 @@
 
 declare(strict_types=1);
 
-use Syriable\PhoneVerification\Facades\PhoneVerification;
-use Syriable\PhoneVerification\Models\PhoneVerification as PhoneVerificationModel;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Facades\Verification;
+use Syriable\OtpVerification\Models\Verification as VerificationModel;
 
-it('cleans up expired codes', function (): void {
-    PhoneVerification::send('+31612345678');
+describe('verification:cleanup', function (): void {
+    it('removes expired unverified codes', function (): void {
+        sendAndCaptureCode('+31612345678');
 
-    travelMinutes(6);
+        travelMinutes(10);
 
-    $this->artisan('verification:cleanup')
-        ->expectsOutputToContain('Removed 1 stale')
-        ->assertSuccessful();
+        test()->artisan('verification:cleanup')->assertSuccessful();
 
-    expect(PhoneVerificationModel::query()->count())->toBe(0);
+        expect(VerificationModel::query()->count())->toBe(0);
+    });
+
+    it('keeps verified records for the retention window', function (): void {
+        $code = sendAndCaptureCode('+31612345678');
+        Verification::verify('+31612345678', $code);
+
+        travelDays(3);
+        test()->artisan('verification:cleanup')->assertSuccessful();
+        expect(VerificationModel::query()->count())->toBe(1);
+
+        travelDays(6);
+        test()->artisan('verification:cleanup')->assertSuccessful();
+        expect(VerificationModel::query()->count())->toBe(0);
+    });
+
+    it('applies each channel\'s own retention window', function (): void {
+        $smsCode = sendAndCaptureCode('+31612345678', Channel::sms());
+        Verification::verify('+31612345678', $smsCode, Channel::sms());
+
+        $mailCode = sendAndCaptureCode('ada@example.com', Channel::mail());
+        Verification::verify('ada@example.com', $mailCode, Channel::mail());
+
+        // Past the 7-day SMS default, inside the 30-day mail override.
+        travelDays(10);
+
+        test()->artisan('verification:cleanup')->assertSuccessful();
+
+        expect(VerificationModel::query()->count())->toBe(1)
+            ->and(VerificationModel::query()->firstOrFail()->channel->isMail())->toBeTrue();
+    });
+
+    it('can be limited to one channel', function (): void {
+        sendAndCaptureCode('+31612345678', Channel::sms());
+        sendAndCaptureCode('ada@example.com', Channel::mail());
+
+        travelMinutes(45);
+
+        test()->artisan('verification:cleanup --channel=sms')->assertSuccessful();
+
+        expect(VerificationModel::query()->count())->toBe(1)
+            ->and(VerificationModel::query()->firstOrFail()->channel->isMail())->toBeTrue();
+    });
+
+    it('rejects an unknown channel', function (): void {
+        test()->artisan('verification:cleanup --channel=carrier-pigeon')->assertFailed();
+    });
 });
 
-it('keeps active codes during cleanup', function (): void {
-    PhoneVerification::send('+31612345678');
+describe('verification:clear', function (): void {
+    it('deletes every record', function (): void {
+        sendAndCaptureCode('+31612345678', Channel::sms());
+        sendAndCaptureCode('ada@example.com', Channel::mail());
 
-    $this->artisan('verification:cleanup')->assertSuccessful();
+        test()->artisan('verification:clear')->assertSuccessful();
 
-    expect(PhoneVerificationModel::query()->count())->toBe(1);
-});
+        expect(VerificationModel::query()->count())->toBe(0);
+    });
 
-it('keeps recently verified records but removes stale ones', function (): void {
-    PhoneVerification::send('+31612345678');
-    PhoneVerification::verify('+31612345678', (string) $this->fakeSender()->lastCodeFor('+31612345678'));
+    it('can be limited to one channel', function (): void {
+        sendAndCaptureCode('+31612345678', Channel::sms());
+        sendAndCaptureCode('ada@example.com', Channel::mail());
 
-    $this->artisan('verification:cleanup')->assertSuccessful();
-    expect(PhoneVerification::isVerified('+31612345678'))->toBeTrue();
+        test()->artisan('verification:clear --channel=mail')->assertSuccessful();
 
-    travelDays(8);
+        expect(VerificationModel::query()->count())->toBe(1)
+            ->and(VerificationModel::query()->firstOrFail()->channel->isSms())->toBeTrue();
+    });
 
-    $this->artisan('verification:cleanup')->assertSuccessful();
-    expect(PhoneVerificationModel::query()->count())->toBe(0);
-});
+    it('clears one identifier on the default channel', function (): void {
+        sendAndCaptureCode('+31612345678', Channel::sms());
+        sendAndCaptureCode('+31699999999', Channel::sms());
 
-it('honors the configured retention for verified records', function (): void {
-    config()->set('phone-verification.cleanup.keep_verified_for_days', 30);
+        test()->artisan('verification:clear +31612345678')->assertSuccessful();
 
-    PhoneVerification::send('+31612345678');
-    PhoneVerification::verify('+31612345678', (string) $this->fakeSender()->lastCodeFor('+31612345678'));
+        expect(VerificationModel::query()->count())->toBe(1);
+    });
 
-    travelDays(8);
+    it('clears one identifier on a named channel', function (): void {
+        sendAndCaptureCode('ada@example.com', Channel::sms());
+        sendAndCaptureCode('ada@example.com', Channel::mail());
 
-    $this->artisan('verification:cleanup')->assertSuccessful();
-    expect(PhoneVerificationModel::query()->count())->toBe(1);
-});
+        test()->artisan('verification:clear ada@example.com --channel=mail')->assertSuccessful();
 
-it('clears all records', function (): void {
-    PhoneVerification::send('+31612345678');
-    PhoneVerification::send('+31687654321');
+        expect(VerificationModel::query()->count())->toBe(1)
+            ->and(VerificationModel::query()->firstOrFail()->channel->isSms())->toBeTrue();
+    });
 
-    $this->artisan('verification:clear')
-        ->expectsOutputToContain('Removed all 2')
-        ->assertSuccessful();
+    it('refuses to clear one identifier when no channel can be resolved', function (): void {
+        config()->set('otp-verification.default_channel', null);
 
-    expect(PhoneVerificationModel::query()->count())->toBe(0);
-});
-
-it('clears records for a single phone number', function (): void {
-    PhoneVerification::send('+31612345678');
-    PhoneVerification::send('+31687654321');
-
-    $this->artisan('verification:clear', ['phone' => '+31612345678'])
-        ->expectsOutputToContain('for +31612345678')
-        ->assertSuccessful();
-
-    expect(PhoneVerificationModel::query()->sole()->phone)->toBe('+31687654321');
+        test()->artisan('verification:clear ada@example.com')->assertFailed();
+    });
 });

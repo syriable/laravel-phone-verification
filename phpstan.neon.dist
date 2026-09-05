@@ -11,3 +11,18 @@ parameters:
     tmpDir: build/phpstan
     configDirectories:
         - config
+
+    ignoreErrors:
+        # The v1 compatibility shims are deprecated on purpose, but the code
+        # that keeps them working has to touch them. These go away in 3.0,
+        # together with the shims themselves. Scoped to the exact files so a
+        # deprecated symbol used anywhere else still fails the build.
+        -
+            message: '#^Instantiation of deprecated class Syriable\\OtpVerification\\Events\\PhoneLinked#'
+            path: src/VerificationManager.php
+        -
+            message: '#^Call to method __construct\(\) of deprecated class Syriable\\OtpVerification\\Events\\PhoneLinked#'
+            path: src/VerificationManager.php
+        -
+            message: '#^Usage of deprecated trait Syriable\\OtpVerification\\Concerns\\HasVerifiedPhone#'
+            path: tests/Fixtures/LegacyUser.php

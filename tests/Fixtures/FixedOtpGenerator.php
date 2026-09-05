@@ -2,14 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Tests\Fixtures;
+namespace Syriable\OtpVerification\Tests\Fixtures;
 
-use Syriable\PhoneVerification\Contracts\OtpGenerator;
+use Syriable\OtpVerification\Contracts\OtpGenerator;
 
 final class FixedOtpGenerator implements OtpGenerator
 {
+    public const string CODE = 'FIXED1';
+
     public function generate(): string
     {
-        return 'FIXED1';
+        return self::CODE;
     }
 }

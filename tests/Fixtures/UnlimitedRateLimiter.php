@@ -2,28 +2,24 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Tests\Fixtures;
+namespace Syriable\OtpVerification\Tests\Fixtures;
 
-use Syriable\PhoneVerification\Contracts\SendRateLimiter;
+use Syriable\OtpVerification\Contracts\SendRateLimiter;
+use Syriable\OtpVerification\Support\VerificationSubject;
 
 final class UnlimitedRateLimiter implements SendRateLimiter
 {
-    public int $recordedSends = 0;
-
-    public function tooManySends(string $phone): bool
+    public function tooManySends(VerificationSubject $subject, int $maxSends): bool
     {
         return false;
     }
 
-    public function recordSend(string $phone): void
-    {
-        $this->recordedSends++;
-    }
+    public function recordSend(VerificationSubject $subject, int $decaySeconds): void {}
 
-    public function availableIn(string $phone): int
+    public function availableIn(VerificationSubject $subject): int
     {
         return 0;
     }
 
-    public function clear(string $phone): void {}
+    public function clear(VerificationSubject $subject): void {}
 }

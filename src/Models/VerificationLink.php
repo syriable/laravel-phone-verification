@@ -2,22 +2,27 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Models;
+namespace Syriable\OtpVerification\Models;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Syriable\OtpVerification\Casts\AsChannel;
+use Syriable\OtpVerification\Channel;
 
 /**
+ * Deliberately not final: resolved through `otp-verification.models.link`.
+ *
  * @property string $id
- * @property string $phone
+ * @property string $identifier
+ * @property Channel $channel
  * @property string $verifiable_type
  * @property int|string $verifiable_id
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-class PhoneVerificationLink extends Model
+class VerificationLink extends Model
 {
     use HasUuids;
 
@@ -26,9 +31,9 @@ class PhoneVerificationLink extends Model
 
     public function getTable(): string
     {
-        $table = config('phone-verification.links_table', 'phone_verification_links');
+        $table = config('otp-verification.links_table', 'verification_links');
 
-        return is_string($table) && $table !== '' ? $table : 'phone_verification_links';
+        return is_string($table) && $table !== '' ? $table : 'verification_links';
     }
 
     /**
@@ -37,13 +42,14 @@ class PhoneVerificationLink extends Model
     protected function casts(): array
     {
         return [
+            'channel' => AsChannel::class,
             'created_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',
         ];
     }
 
     /**
-     * The model this phone number belongs to.
+     * The model this verified identifier belongs to.
      *
      * @return MorphTo<Model, $this>
      */

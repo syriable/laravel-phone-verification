@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Support;
+namespace Syriable\OtpVerification\Support;
 
 use Carbon\CarbonImmutable;
+use Syriable\OtpVerification\Channel;
 
 /**
  * An immutable, storage-agnostic snapshot of a verification record.
@@ -14,7 +15,8 @@ final readonly class VerificationRecord
 {
     public function __construct(
         public string $id,
-        public string $phone,
+        public string $identifier,
+        public Channel $channel,
         public string $codeHash,
         public CarbonImmutable $expiresAt,
         public ?CarbonImmutable $verifiedAt,
@@ -23,9 +25,14 @@ final readonly class VerificationRecord
         public CarbonImmutable $createdAt,
     ) {}
 
+    public function subject(): VerificationSubject
+    {
+        return VerificationSubject::of($this->identifier, $this->channel);
+    }
+
     public function isVerified(): bool
     {
-        return $this->verifiedAt !== null;
+        return $this->verifiedAt instanceof CarbonImmutable;
     }
 
     public function isExpired(CarbonImmutable $at): bool

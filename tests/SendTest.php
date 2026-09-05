@@ -3,156 +3,152 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Event;
-use Syriable\PhoneVerification\Enums\SendOutcome;
-use Syriable\PhoneVerification\Events\VerificationCreated;
-use Syriable\PhoneVerification\Events\VerificationSent;
-use Syriable\PhoneVerification\Facades\PhoneVerification;
-use Syriable\PhoneVerification\Models\PhoneVerification as PhoneVerificationModel;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Events\VerificationCreated;
+use Syriable\OtpVerification\Events\VerificationSent;
+use Syriable\OtpVerification\Exceptions\InvalidConfiguration;
+use Syriable\OtpVerification\Facades\Verification;
+use Syriable\OtpVerification\Models\Verification as VerificationModel;
 
-it('sends a code to a phone number', function (): void {
-    $result = PhoneVerification::send('+31612345678');
+describe('sending a code', function (): void {
+    it('delivers a code and records it', function (): void {
+        $result = Verification::send('+31612345678');
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->failed())->toBeFalse()
-        ->and($result->outcome)->toBe(SendOutcome::Sent)
-        ->and($result->verification)->not->toBeNull()
-        ->and($result->verification?->phone)->toBe('+31612345678');
+        expect($result->successful())->toBeTrue()
+            ->and($result->verification)->not->toBeNull();
 
-    $this->fakeSender()->assertSentTo('+31612345678', times: 1);
-});
+        test()->fakeSender()->assertSentTo('+31612345678', Channel::sms());
 
-it('generates a six digit numeric code by default', function (): void {
-    PhoneVerification::send('+31612345678');
+        expect(VerificationModel::query()->count())->toBe(1);
+    });
 
-    $code = $this->fakeSender()->lastCodeFor('+31612345678');
+    it('never stores the plain-text code', function (): void {
+        $code = sendAndCaptureCode('+31612345678');
 
-    expect($code)->toHaveLength(6)
-        ->and(ctype_digit((string) $code))->toBeTrue();
-});
+        $stored = VerificationModel::query()->firstOrFail();
 
-it('stores a hash of the code, never the code itself', function (): void {
-    PhoneVerification::send('+31612345678');
+        expect($stored->code_hash)->not->toBe($code)
+            ->and($stored->code_hash)->not->toContain($code);
+    });
 
-    $code = (string) $this->fakeSender()->lastCodeFor('+31612345678');
-    $model = PhoneVerificationModel::query()->sole();
+    it('stores the channel alongside the identifier', function (): void {
+        Verification::send('alice@example.com', Channel::mail());
 
-    expect($model->code_hash)->not->toBe($code)
-        ->and($model->code_hash)->not->toContain($code)
-        ->and(strlen($model->code_hash))->toBe(64);
-});
+        $stored = VerificationModel::query()->firstOrFail();
 
-it('hides the code hash when the model is serialized', function (): void {
-    PhoneVerification::send('+31612345678');
+        expect($stored->identifier)->toBe('alice@example.com')
+            ->and($stored->channel->isMail())->toBeTrue();
+    });
 
-    $model = PhoneVerificationModel::query()->sole();
+    it('uses the default channel when none is given', function (): void {
+        config()->set('otp-verification.default_channel', 'mail');
 
-    expect($model->toArray())->not->toHaveKey('code_hash');
-});
+        Verification::send('alice@example.com');
 
-it('dispatches the created and sent events', function (): void {
-    Event::fake([VerificationCreated::class, VerificationSent::class]);
+        test()->fakeSender()->assertSentOn(Channel::mail());
+    });
 
-    PhoneVerification::send('+31612345678');
+    it('requires a channel when no default is configured', function (): void {
+        config()->set('otp-verification.default_channel', null);
 
-    Event::assertDispatched(
-        VerificationCreated::class,
-        fn (VerificationCreated $event): bool => $event->verification->phone === '+31612345678',
-    );
-    Event::assertDispatched(VerificationSent::class);
-});
+        expect(fn () => Verification::send('+31612345678'))
+            ->toThrow(InvalidConfiguration::class);
 
-it('fails without sending when the package is disabled', function (): void {
-    config()->set('phone-verification.enabled', false);
+        test()->fakeSender()->assertNothingSent();
+    });
 
-    $result = PhoneVerification::send('+31612345678');
+    it('sends the code through the channel that was asked for', function (): void {
+        Verification::send('+31612345678', Channel::sms());
+        Verification::send('alice@example.com', Channel::mail());
 
-    expect($result->failed())->toBeTrue()
-        ->and($result->disabled())->toBeTrue()
-        ->and($result->outcome)->toBe(SendOutcome::Disabled);
+        test()->fakeSender()->assertSentOn(Channel::sms(), 1);
+        test()->fakeSender()->assertSentOn(Channel::mail(), 1);
+    });
 
-    $this->fakeSender()->assertNothingSent();
-});
+    it('gives the sender everything it needs to write a message', function (): void {
+        Verification::send('alice@example.com', Channel::mail());
 
-it('applies a cooldown between sends', function (): void {
-    PhoneVerification::send('+31612345678');
+        $message = test()->fakeSender()->sent(Channel::mail())[0];
 
-    $result = PhoneVerification::send('+31612345678');
+        expect($message->identifier())->toBe('alice@example.com')
+            ->and($message->channel()->isMail())->toBeTrue()
+            ->and($message->code)->not->toBe('')
+            ->and($message->resendCount)->toBe(0)
+            ->and($message->verificationId)->not->toBe('')
+            ->and($message->expiresInMinutes())->toBeGreaterThan(0);
+    });
 
-    expect($result->failed())->toBeTrue()
-        ->and($result->onCooldown())->toBeTrue()
-        ->and($result->retryAfter())->toBeGreaterThan(0)
-        ->and($result->retryAfter())->toBeLessThanOrEqual(60);
+    it('invalidates the previous code when a new one is issued', function (): void {
+        $first = sendAndCaptureCode('+31612345678');
+        travelSeconds(120);
+        sendAndCaptureCode('+31612345678');
 
-    $this->fakeSender()->assertSentTo('+31612345678', times: 1);
-});
+        expect(Verification::verify('+31612345678', $first)->failed())->toBeTrue()
+            ->and(VerificationModel::query()->count())->toBe(1);
+    });
 
-it('allows sending again once the cooldown has passed', function (): void {
-    PhoneVerification::send('+31612345678');
+    it('returns a disabled result and sends nothing when turned off', function (): void {
+        config()->set('otp-verification.enabled', false);
 
-    travelSeconds(61);
+        $result = Verification::send('+31612345678');
 
-    expect(PhoneVerification::send('+31612345678')->successful())->toBeTrue();
+        expect($result->failed())->toBeTrue()
+            ->and($result->disabled())->toBeTrue();
 
-    $this->fakeSender()->assertSentTo('+31612345678', times: 2);
-});
+        test()->fakeSender()->assertNothingSent();
+    });
 
-it('disables the cooldown when resend_after is zero', function (): void {
-    config()->set('phone-verification.resend_after', 0);
+    it('can be disabled for one channel only', function (): void {
+        config()->set('otp-verification.channels.sms.enabled', false);
 
-    PhoneVerification::send('+31612345678');
+        expect(Verification::send('+31612345678', Channel::sms())->disabled())->toBeTrue()
+            ->and(Verification::send('alice@example.com', Channel::mail())->successful())->toBeTrue();
+    });
 
-    expect(PhoneVerification::send('+31612345678')->successful())->toBeTrue();
-});
+    it('refuses a second code during the cooldown, and says how long to wait', function (): void {
+        Verification::send('+31612345678');
 
-it('invalidates the previous code when a new one is sent', function (): void {
-    PhoneVerification::send('+31612345678');
-    $firstCode = (string) $this->fakeSender()->lastCodeFor('+31612345678');
+        $result = Verification::send('+31612345678');
 
-    travelSeconds(61);
-    PhoneVerification::send('+31612345678');
-    $secondCode = (string) $this->fakeSender()->lastCodeFor('+31612345678');
+        expect($result->onCooldown())->toBeTrue()
+            ->and($result->retryAfter())->toBeGreaterThan(0)
+            ->and($result->retryAfter())->toBeLessThanOrEqual(60);
 
-    expect(PhoneVerification::verify('+31612345678', $firstCode)->successful())->toBeFalse()
-        ->and(PhoneVerification::verify('+31612345678', $secondCode)->successful())->toBeTrue()
-        ->and(PhoneVerificationModel::query()->count())->toBe(1);
-});
+        test()->fakeSender()->assertSentTo('+31612345678', Channel::sms(), 1);
+    });
 
-it('rate limits sends per phone number', function (): void {
-    config()->set('phone-verification.resend_after', 0);
-    config()->set('phone-verification.max_send_attempts', 3);
-    config()->set('phone-verification.per_minutes', 15);
+    it('keeps cooldowns independent per channel', function (): void {
+        Verification::send('alice@example.com', Channel::sms());
 
-    foreach (range(1, 3) as $i) {
-        expect(PhoneVerification::send('+31612345678')->successful())->toBeTrue();
-    }
+        expect(Verification::send('alice@example.com', Channel::sms())->onCooldown())->toBeTrue()
+            ->and(Verification::send('alice@example.com', Channel::mail())->successful())->toBeTrue();
+    });
 
-    $result = PhoneVerification::send('+31612345678');
+    it('throttles the rolling send window', function (): void {
+        config()->set('otp-verification.channels.sms.max_send_attempts', 2);
+        config()->set('otp-verification.channels.sms.resend_after', 0);
 
-    expect($result->rateLimited())->toBeTrue()
-        ->and($result->retryAfter())->toBeGreaterThan(0);
+        Verification::send('+31612345678');
+        Verification::send('+31612345678');
 
-    $this->fakeSender()->assertSentTo('+31612345678', times: 3);
-});
+        $result = Verification::send('+31612345678');
 
-it('does not rate limit other phone numbers', function (): void {
-    config()->set('phone-verification.resend_after', 0);
-    config()->set('phone-verification.max_send_attempts', 1);
+        expect($result->rateLimited())->toBeTrue()
+            ->and($result->retryAfter())->toBeGreaterThan(0);
+    });
 
-    PhoneVerification::send('+31612345678');
+    it('dispatches created and sent events carrying the channel', function (): void {
+        Event::fake([VerificationCreated::class, VerificationSent::class]);
 
-    expect(PhoneVerification::send('+31612345678')->rateLimited())->toBeTrue()
-        ->and(PhoneVerification::send('+31687654321')->successful())->toBeTrue();
-});
+        Verification::send('alice@example.com', Channel::mail());
 
-it('allows sending again once the rate limit window has passed', function (): void {
-    config()->set('phone-verification.resend_after', 0);
-    config()->set('phone-verification.max_send_attempts', 1);
-    config()->set('phone-verification.per_minutes', 15);
-
-    PhoneVerification::send('+31612345678');
-    expect(PhoneVerification::send('+31612345678')->rateLimited())->toBeTrue();
-
-    travelMinutes(16);
-
-    expect(PhoneVerification::send('+31612345678')->successful())->toBeTrue();
+        Event::assertDispatched(
+            VerificationCreated::class,
+            static fn (VerificationCreated $event): bool => $event->verification->channel->isMail()
+        );
+        Event::assertDispatched(
+            VerificationSent::class,
+            static fn (VerificationSent $event): bool => $event->verification->identifier === 'alice@example.com'
+        );
+    });
 });

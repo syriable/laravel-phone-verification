@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Results;
+namespace Syriable\OtpVerification\Results;
 
-use Syriable\PhoneVerification\Enums\VerificationOutcome;
-use Syriable\PhoneVerification\Support\VerificationRecord;
+use Syriable\OtpVerification\Enums\VerificationOutcome;
+use Syriable\OtpVerification\Support\VerificationRecord;
 
 /**
- * The result of checking a code against a phone number.
+ * The result of checking a code against an identifier on a channel.
  * Expected failures are expressed as outcomes, never as exceptions.
  */
 final readonly class VerificationResult
@@ -55,11 +55,19 @@ final readonly class VerificationResult
     }
 
     /**
-     * The code was correct, but the phone number is already linked to a
+     * The code was correct, but the identifier is already linked to a
      * different model than the one passed to verify().
+     */
+    public function identifierTakenByAnotherAccount(): bool
+    {
+        return $this->outcome === VerificationOutcome::IdentifierTakenByAnotherAccount;
+    }
+
+    /**
+     * @deprecated since 2.0, removed in 3.0 — use identifierTakenByAnotherAccount()
      */
     public function phoneTakenByAnotherAccount(): bool
     {
-        return $this->outcome === VerificationOutcome::PhoneTakenByAnotherAccount;
+        return $this->identifierTakenByAnotherAccount();
     }
 }

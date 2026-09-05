@@ -1,17 +1,18 @@
 {
-    "name": "syriable/laravel-phone-verification",
-    "description": "A backend-only, provider-agnostic phone verification (OTP) package for Laravel",
+    "name": "syriable/laravel-otp-verification",
+    "description": "A backend-only, provider-agnostic OTP verification package for Laravel — verify any identifier over any channel, with SMS and email as first-class channels",
     "keywords": [
         "syriable",
         "laravel",
-        "laravel-phone-verification",
-        "phone-verification",
         "otp",
-        "sms",
+        "otp-verification",
         "verification",
+        "phone-verification",
+        "email-verification",
+        "sms",
         "two-factor"
     ],
-    "homepage": "https://github.com/syriable/laravel-phone-verification",
+    "homepage": "https://github.com/syriable/laravel-otp-verification",
     "license": "MIT",
     "authors": [
         {
@@ -21,12 +22,15 @@
         }
     ],
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "spatie/laravel-package-tools": "^1.16",
+        "illuminate/auth": "^12.0||^13.0",
+        "illuminate/bus": "^12.0||^13.0",
         "illuminate/cache": "^12.0||^13.0",
         "illuminate/console": "^12.0||^13.0",
         "illuminate/contracts": "^12.0||^13.0",
         "illuminate/database": "^12.0||^13.0",
+        "illuminate/queue": "^12.0||^13.0",
         "illuminate/support": "^12.0||^13.0",
         "nesbot/carbon": "^3.0"
     },
@@ -47,12 +51,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Syriable\\PhoneVerification\\": "src/"
+            "Syriable\\OtpVerification\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Syriable\\PhoneVerification\\Tests\\": "tests/",
+            "Syriable\\OtpVerification\\Tests\\": "tests/",
             "Workbench\\App\\": "workbench/app/"
         }
     },
@@ -74,10 +78,11 @@
     "extra": {
         "laravel": {
             "providers": [
-                "Syriable\\PhoneVerification\\PhoneVerificationServiceProvider"
+                "Syriable\\OtpVerification\\OtpVerificationServiceProvider"
             ],
             "aliases": {
-                "PhoneVerification": "Syriable\\PhoneVerification\\Facades\\PhoneVerification"
+                "Verification": "Syriable\\OtpVerification\\Facades\\Verification",
+                "PhoneVerification": "Syriable\\OtpVerification\\Facades\\PhoneVerification"
             }
         }
     },

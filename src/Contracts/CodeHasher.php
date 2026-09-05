@@ -2,18 +2,23 @@
 
 declare(strict_types=1);
 
-namespace Syriable\PhoneVerification\Contracts;
+namespace Syriable\OtpVerification\Contracts;
+
+use Syriable\OtpVerification\Support\VerificationSubject;
 
 interface CodeHasher
 {
     /**
-     * Hash the code for storage. The phone number is included so a stored
-     * hash can never be replayed against another phone number.
+     * Hash a code for storage.
+     *
+     * The subject is part of the hashed message, so a stored hash is bound to
+     * both the identifier and the channel it was issued for and can never be
+     * replayed against a different identifier or a different channel.
      */
-    public function hash(string $phone, string $code): string;
+    public function hash(VerificationSubject $subject, string $code): string;
 
     /**
-     * Check the code against a stored hash using a constant-time comparison.
+     * Check a code against a stored hash using a constant-time comparison.
      */
-    public function verify(string $phone, string $code, string $hash): bool;
+    public function verify(VerificationSubject $subject, string $code, string $hash): bool;
 }
