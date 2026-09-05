@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Syriable\OtpVerification\Concerns;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Syriable\OtpVerification\Channel;
@@ -75,7 +76,7 @@ trait HasVerifiedIdentifiers
     protected function verificationLinkOn(Channel $channel): ?VerificationLink
     {
         if ($this->relationLoaded('verificationLinks')) {
-            /** @var \Illuminate\Database\Eloquent\Collection<int, VerificationLink> $links */
+            /** @var Collection<int, VerificationLink> $links */
             $links = $this->getRelation('verificationLinks');
 
             return $links->first(

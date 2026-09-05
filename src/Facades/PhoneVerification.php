@@ -21,7 +21,6 @@ use Syriable\OtpVerification\VerificationManager;
  * default channel is mail.
  *
  * @deprecated since 2.0, removed in 3.0 — use the Verification facade
- *
  * @see Verification
  */
 class PhoneVerification extends Facade
