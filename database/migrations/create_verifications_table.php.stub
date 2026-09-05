@@ -19,6 +19,10 @@ return new class extends Migration
             $table->string('identifier', VerificationSubject::MAX_IDENTIFIER_LENGTH);
             $table->string('channel', 32);
 
+            // What this code is for, so unrelated flows sharing an address and
+            // a channel each keep their own live code.
+            $table->string('purpose', 32)->default('default');
+
             $table->string('code_hash');
             $table->timestamp('expires_at');
             $table->timestamp('verified_at')->nullable();
@@ -26,8 +30,8 @@ return new class extends Migration
             $table->unsignedSmallInteger('resend_count')->default(0);
             $table->timestamps();
 
-            $table->index(['identifier', 'channel', 'created_at']);
-            $table->index(['identifier', 'channel', 'verified_at']);
+            $table->index(['identifier', 'channel', 'purpose', 'created_at']);
+            $table->index(['identifier', 'channel', 'purpose', 'verified_at']);
             $table->index(['channel', 'expires_at']);
         });
     }

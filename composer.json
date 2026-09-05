@@ -12,7 +12,7 @@
         "sms",
         "two-factor"
     ],
-    "homepage": "https://github.com/syriable/laravel-otp-verification",
+    "homepage": "https://github.com/syriable/syriable-laravel-otp-verification",
     "license": "MIT",
     "authors": [
         {

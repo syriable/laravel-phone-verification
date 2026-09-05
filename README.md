@@ -1,7 +1,7 @@
 # OTP verification for Laravel
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/syriable/laravel-otp-verification.svg?style=flat-square)](https://packagist.org/packages/syriable/laravel-otp-verification)
-[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/syriable/laravel-otp-verification/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/syriable/laravel-otp-verification/actions?query=workflow%3Arun-tests+branch%3Amain)
+[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/syriable/syriable-laravel-otp-verification/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/syriable/syriable-laravel-otp-verification/actions?query=workflow%3Arun-tests+branch%3Amain)
 [![Total Downloads](https://img.shields.io/packagist/dt/syriable/laravel-otp-verification.svg?style=flat-square)](https://packagist.org/packages/syriable/laravel-otp-verification)
 
 Verify that someone controls an identifier — a phone number, an email address, a chat handle — by sending them a one-time code, over any channel, through any provider.
@@ -89,6 +89,96 @@ Verification::send('+31612345678');
 ```
 
 > **If you use more than one channel, set `'default_channel' => null`.** The channel argument then becomes required, and passing an email address to a call that would otherwise have defaulted to SMS fails loudly instead of quietly sending the wrong thing.
+
+## Purposes: several flows on one address
+
+By default, one identifier on one channel holds one live code. Send a second code to the same address on the same channel and it replaces the first — which is right for "resend my code", and wrong as soon as you have two *different* things to verify.
+
+Name the flow with a purpose and each one keeps its own code, its own cooldown and its own status:
+
+```php
+$signup = Verification::channel(Channel::mail())->purpose('signup');
+$payout = Verification::channel(Channel::mail())->purpose('payout_confirmation');
+
+$signup->send($email);   // neither of these
+$payout->send($email);   // invalidates the other
+
+$signup->verify($email, $signupCode);
+$payout->verify($email, $payoutCode);
+```
+
+A code issued for one purpose will never verify another — the purpose is bound into the hash, exactly like the channel.
+
+Your sender can tell them apart, so one class can serve every flow on a channel:
+
+```php
+public function send(OtpMessage $message): void
+{
+    $mailable = match ($message->purpose()) {
+        'payout_confirmation' => new PayoutCodeMail($message->code),
+        default               => new VerificationCode($message->code, $message->expiresInMinutes()),
+    };
+
+    $this->mailer->to($message->identifier())->send($mailable);
+}
+```
+
+Purposes are lowercase, up to 32 characters (`[a-z0-9][a-z0-9_-]*`). **They come from your code, never from user input** — see [Purposes and throttling](#purposes-and-throttling) below.
+
+Shortcut for the default channel:
+
+```php
+Verification::purpose('payout_confirmation')->send($email);
+```
+
+Links deliberately ignore the purpose: a link records *who owns* an identifier, which is a property of the identity rather than of any one flow. `linkedTo()` and `identifierFor()` behave the same whichever purpose verified the address.
+
+## Changing the code shape per call
+
+Everything the config file sets per channel can be overridden for a single call, with no config change at all:
+
+```php
+use Syriable\OtpVerification\Enums\OtpType;
+
+Verification::channel(Channel::mail())
+    ->purpose('payout_confirmation')
+    ->code(length: 10, type: OtpType::Alphabetic)
+    ->expiresIn(5)
+    ->send($email);
+```
+
+| Method | Overrides |
+|---|---|
+| `code(length: …)` | how many characters |
+| `code(type: OtpType::Numeric)` | the alphabet — `Numeric`, `Alphabetic`, `Alphanumeric` |
+| `code(characters: 'ABC123')` | a fully custom set (wins over `type`) |
+| `expiresIn($minutes)` | how long the code stays valid |
+
+Anything you leave unset falls back to the channel's configuration. So a numeric email code, without publishing the config file, is just:
+
+```php
+Verification::channel(Channel::mail())->code(length: 6, type: OtpType::Numeric)->send($email);
+```
+
+Builder methods return a **new** instance, so a configured scope is safe to hold and reuse — and that is how a resend keeps the shape of the code it replaces, since the shape is never stored:
+
+```php
+$payout = Verification::channel(Channel::mail())
+    ->purpose('payout_confirmation')
+    ->code(length: 10, type: OtpType::Alphabetic);
+
+$payout->send($email);
+$payout->resend($email);   // same shape
+```
+
+> If a channel is configured with a custom `otp.generator`, a `code()` override throws `InvalidConfiguration`. The generator owns the shape of the codes it produces, so the two cannot both apply — better a loud error than silently picking one.
+
+### Purposes and throttling
+
+The two throttles behave differently on purpose:
+
+- **The resend cooldown is per purpose.** Sending a payout code does not block an email-verification code.
+- **The rolling send window is per identifier and channel.** It is a cost and abuse control, so it is shared. If purposes each had their own window, anyone able to influence a purpose value could multiply your SMS spend.
 
 ## Senders
 
@@ -371,6 +461,7 @@ php artisan verification:cleanup --channel=sms
 php artisan verification:clear                        # delete everything
 php artisan verification:clear --channel=mail
 php artisan verification:clear ada@example.com --channel=mail
+php artisan verification:clear ada@example.com --channel=mail --purpose=payout_confirmation
 ```
 
 Schedule the cleanup in `routes/console.php`:
@@ -400,6 +491,10 @@ $sender->assertSentOn(Channel::mail(), times: 1);
 $sender->assertNothingSentOn(Channel::sms());
 
 $code = $sender->lastCodeFor('ada@example.com', Channel::mail());
+
+// Purpose-aware:
+$sender->assertSentForPurpose('payout_confirmation', times: 1);
+$payoutCode = $sender->lastCodeFor('ada@example.com', Channel::mail(), 'payout_confirmation');
 ```
 
 ## Extending
@@ -409,7 +504,7 @@ Every collaborator is a contract resolved from config:
 | Config key | Contract | Swap it when |
 |---|---|---|
 | `channels.*.sender` | `OtpSender` | always — this is the one class you write |
-| `channels.*.otp.generator`, `otp.generator` | `OtpGenerator` | you need a check digit, a wordlist, or a different shape on one channel |
+| `channels.*.otp.generator`, `otp.generator` | `OtpGenerator` | you need a check digit or a wordlist. For length/alphabet alone, prefer `code()` per call |
 | `hash_driver` | `CodeHasher` | you must hash in an HSM or with a separate pepper |
 | `repository` | `VerificationRepository` | codes belong in Redis, or need tenancy scoping |
 | `link_repository` | `LinkRepository` | identity links already live in your own schema |
@@ -420,7 +515,7 @@ The public API takes strings and channels; the contracts take a `VerificationSub
 
 ## Security
 
-- Codes are stored only as HMAC-SHA256 hashes keyed with your `APP_KEY`, over a length-prefixed encoding of `(channel, identifier, code)` — so a hash can never be replayed against another identifier or another channel, and no identifier can be crafted to collide with another.
+- Codes are stored only as HMAC-SHA256 hashes keyed with your `APP_KEY`, over a length-prefixed encoding of `(channel, identifier, code)` — plus the purpose when one is named — so a hash can never be replayed against another identifier, another channel or another flow, and no identifier can be crafted to collide with another.
 - Comparison is constant time (`hash_equals`).
 - Codes are invalidated on success, expiry, attempt exhaustion, and whenever a new code is issued.
 - Two independent throttles: a per-identifier resend cooldown and a rolling send window.

@@ -20,7 +20,7 @@ use Syriable\OtpVerification\VerificationManager;
  * `default_channel`, so this keeps v1's meaning even in an application whose
  * default channel is mail.
  *
- * @deprecated since 2.0, removed in 3.0 — use the Verification facade
+ * @deprecated since 1.0, removed in 2.0 — use the Verification facade
  * @see Verification
  */
 class PhoneVerification extends Facade
@@ -76,7 +76,7 @@ class PhoneVerification extends Facade
     }
 
     /**
-     * @deprecated since 2.0, removed in 3.0 — use Verification::identifierFor()
+     * @deprecated since 1.0, removed in 2.0 — use Verification::identifierFor()
      */
     public static function phoneFor(Model $verifiable): ?string
     {

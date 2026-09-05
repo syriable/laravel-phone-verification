@@ -1,0 +1,55 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Adds the purpose column to installations created before purposes existed.
+ *
+ * Guarded so it is a no-op on a fresh install, where the create migration
+ * already ships the column. Existing rows take the default purpose, which is
+ * exactly what they were: a single unnamed flow per identifier and channel.
+ * The pre-existing indexes are left in place — adding to a live table is
+ * cheap, dropping is not.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        $table = $this->tableName();
+
+        if (! Schema::hasTable($table) || Schema::hasColumn($table, 'purpose')) {
+            return;
+        }
+
+        Schema::table($table, function (Blueprint $table): void {
+            $table->string('purpose', 32)->default('default')->after('channel');
+
+            $table->index(['identifier', 'channel', 'purpose', 'created_at']);
+            $table->index(['identifier', 'channel', 'purpose', 'verified_at']);
+        });
+    }
+
+    public function down(): void
+    {
+        $table = $this->tableName();
+
+        if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'purpose')) {
+            return;
+        }
+
+        Schema::table($table, function (Blueprint $table): void {
+            $table->dropIndex(['identifier', 'channel', 'purpose', 'created_at']);
+            $table->dropIndex(['identifier', 'channel', 'purpose', 'verified_at']);
+            $table->dropColumn('purpose');
+        });
+    }
+
+    private function tableName(): string
+    {
+        $table = config('otp-verification.table', 'verifications');
+
+        return is_string($table) && $table !== '' ? $table : 'verifications';
+    }
+};

@@ -15,7 +15,8 @@ final class ClearCommand extends Command
 {
     protected $signature = 'verification:clear
         {identifier? : Only clear records for this identifier}
-        {--channel= : Only clear records on this channel}';
+        {--channel= : Only clear records on this channel}
+        {--purpose= : Only clear records for this purpose (with an identifier)}';
 
     protected $description = 'Delete verification records, optionally for one identifier or one channel';
 
@@ -63,9 +64,18 @@ final class ClearCommand extends Command
             return self::FAILURE;
         }
 
-        $deleted = $repository->clear(VerificationSubject::of($identifier, $channel));
+        $purpose = $this->option('purpose');
+        $purpose = is_string($purpose) && $purpose !== '' ? $purpose : null;
 
-        $this->info("Removed {$deleted} verification record(s) for {$identifier} on the {$channel->value} channel.");
+        $deleted = $repository->clear(VerificationSubject::of($identifier, $channel, $purpose));
+
+        $this->info(sprintf(
+            'Removed %d verification record(s) for %s on the %s channel for the %s purpose.',
+            $deleted,
+            $identifier,
+            $channel->value,
+            $purpose ?? VerificationSubject::DEFAULT_PURPOSE,
+        ));
 
         return self::SUCCESS;
     }

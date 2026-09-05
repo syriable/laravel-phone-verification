@@ -2,11 +2,54 @@
 
 All notable changes to `laravel-otp-verification` will be documented in this file.
 
-## 2.0.0 - Unreleased
+## 1.0.1 - 2026-09-05
 
-v1 was a phone-only OTP package. v2 verifies **any identifier over any channel**, with SMS and email as first-class channels. See [UPGRADING.md](UPGRADING.md) for the migration path.
+Adds purposes and per-call code shaping. Everything here is additive: if you do not name a purpose or override a shape, behaviour is identical to 1.0.0, and **codes issued by 1.0.0 keep verifying**.
 
-> ⚠️ **Every code issued by v1 stops verifying under v2.** Hashes are now bound to `(identifier, channel)` over a length-prefixed encoding, which is both a fix for a canonicalization weakness and the mechanism that prevents cross-channel replay. The blast radius is one expiration window.
+### Added
+
+- **Purposes.** A third dimension on the verification subject, so unrelated flows that share an identifier *and* a channel each keep their own live code. Before this, sending a second code to the same address on the same channel silently invalidated the first, and only the most recent one could ever be verified.
+
+  ```php
+  Verification::channel(Channel::mail())->purpose('payout_confirmation')->send($email);
+  Verification::channel(Channel::mail())->purpose('payout_confirmation')->verify($email, $code);
+  ```
+
+- **Per-call code shape and lifetime**, with no config change:
+
+  ```php
+  Verification::channel(Channel::mail())
+      ->purpose('payout_confirmation')
+      ->code(length: 10, type: OtpType::Alphabetic)
+      ->expiresIn(5)
+      ->send($email);
+  ```
+
+  Anything left unset falls back to the channel's configuration. `PendingChannel` builder methods return new instances, so a configured scope can be held and reused — which is how a resend keeps the shape of the code it replaces.
+
+- `Verification::purpose(...)` as a shortcut for a purpose on the default channel.
+- `OtpMessage::purpose()`, so one sender can pick a different template per flow.
+- `purpose` column on the `verifications` table, plus `add_purpose_to_verifications_table` — guarded, so it is a no-op on a fresh install and safe on a live table. Existing rows take the default purpose, which is exactly what they already were.
+- `--purpose` on `verification:clear`.
+- `FakeSender::sentFor()`, `assertSentForPurpose()`, and an optional `$purpose` argument on `codesFor()`, `lastCodeFor()` and `sentCount()`.
+- `CodeOptions` value object and `InvalidPurpose` exception.
+
+### Changed
+
+- Hashes now bind the purpose as well as the identifier and channel, so a code issued for one flow cannot be replayed against another. **The encoding stays backward compatible**: the purpose field is appended to the HMAC message only when it is not the default, so every hash written by 1.0.0 still verifies. A test pins the 1.0.0 byte sequence so this cannot regress silently.
+- The **resend cooldown is per purpose** (a payout code does not block an email-verify code), while the **rolling send window stays per identifier and channel**. That asymmetry is deliberate: the window is a cost and abuse control, and keying it per purpose would let anyone able to influence a purpose value multiply your SMS spend.
+- Links remain purpose-blind. A link records who owns an identifier, which is a property of the identity rather than of any one flow.
+- A per-call shape override on a channel configured with a custom `otp.generator` now throws `InvalidConfiguration` rather than silently picking one of the two conflicting instructions.
+
+### Fixed
+
+- Deprecation annotations on the v1 compatibility shims said `since 2.0, removed in 3.0`; the first release of this package is 1.0.0, so they now read `since 1.0, removed in 2.0`.
+
+## 1.0.0 - 2026-09-05
+
+First release. Backend-only, provider-agnostic OTP verification: **any identifier, over any channel**, with SMS and email as first-class channels.
+
+This package continues `syriable/laravel-phone-verification`, which was never published. See [UPGRADING.md](UPGRADING.md) for the rename map if you were tracking that repository.
 
 ### Added
 
@@ -14,33 +57,18 @@ v1 was a phone-only OTP package. v2 verifies **any identifier over any channel**
 - Per-channel senders: `channels.{name}.sender`, resolved from the container and validated against `OtpSender` at resolve time.
 - Per-channel overrides for expiration, resend cooldown, attempt limits, send window, code shape and retention, resolving `channels.{channel}.{key}` → `{key}` → package default.
 - `Verification` facade covering `send`, `resend`, `verify`, `status`, `isVerified`, `invalidate`, `link`, `unlink`, `linkedTo` and `identifierFor`, each taking an optional channel.
-- `Verification::channel(...)` returning a `PendingChannel` scope, for code that works on one channel throughout.
-- `default_channel` config key so single-channel applications can omit the argument; set it to `null` to make the argument required.
-- Opt-in queued delivery (`queue`), via a decorator and a `SendOtpMessage` job that implements `ShouldBeEncrypted` and defaults to a single try.
+- `Verification::channel(...)` returning a `PendingChannel` scope.
+- `default_channel` so single-channel applications can omit the argument; set it to `null` to make the argument required.
+- Opt-in queued delivery, via a decorator and a `SendOtpMessage` job that implements `ShouldBeEncrypted` and defaults to a single try.
 - Opt-in `MarkEmailAsVerified` listener bridging a verified mail identifier into Laravel's `MustVerifyEmail` and dispatching `Illuminate\Auth\Events\Verified`. Registered only when enabled.
-- `HasVerifiedIdentifiers` trait: one verified identifier per channel, so a model can hold a phone number and an email address at once. Reads from an eager-loaded relation when present.
-- `IdentifierLinked` event; `VerificationSucceeded` now carries the model that was verified for.
-- `--channel` filter on `verification:cleanup` and `verification:clear`, with per-channel retention.
-- `otp-verification:migrate-v1` command to copy v1 links, with `--dry-run`.
-- Channel-aware `FakeSender`: `assertSentOn()`, `assertNothingSentOn()`, and a channel argument on the existing assertions.
-- `OtpMessage`, `VerificationSubject`, `ChannelConfig` and `QueueConfig` value objects.
-- Config-resolved models (`models.verification`, `models.link`), validated to extend the model they replace.
-
-### Changed
-
-- **Package renamed** to `syriable/laravel-otp-verification`; namespace `Syriable\OtpVerification`; config file `otp-verification.php`.
-- **Sender contract** is now `OtpSender::send(OtpMessage $message)` — one parameter object instead of two scalars, so future additions stay backward compatible.
-- **Hashing** binds `(identifier, channel)` over a length-prefixed encoding instead of joining with `|`, which was only unambiguous while identifiers were phone numbers.
-- **Tables** renamed: `phone_verifications` → `verifications`, `phone_verification_links` → `verification_links`. `phone` → `identifier` (254 chars), plus a `channel` column and channel-aware indexes.
-- **Link uniqueness** is now per channel in both directions: `unique(identifier, channel)` and `unique(verifiable, channel)`.
-- Repository, link repository, hasher and rate-limiter contracts take a `VerificationSubject`; the rate limiter takes its limits per call.
-- `VerificationRecord` carries `identifier` and `channel`; `VerificationOutcome::PhoneTakenByAnotherAccount` became `IdentifierTakenByAnotherAccount`.
-- Default per-channel settings differ on purpose: mail codes are 8 alphanumeric characters lasting 30 minutes with a looser send window; SMS codes stay 6 digits for 5 minutes with a tighter one.
-- PHP floor raised to 8.4. Laravel 12 and 13 both supported.
+- `HasVerifiedIdentifiers` trait: one verified identifier per channel, so a model can hold a phone number and an email address at once.
+- Lifecycle events, `verification:cleanup` and `verification:clear` commands, `otp-verification:migrate-v1`, and a channel-aware `FakeSender`.
+- Codes stored as HMAC-SHA256 hashes over a length-prefixed encoding of `(channel, identifier, code)`, compared in constant time, with hashed rate-limiter cache keys and an architecture test forbidding loggers.
+- Config-resolved models, validated to extend the model they replace.
 
 ### Deprecated
 
-Removed in 3.0:
+Shims for the previous package's API, removed in 2.0:
 
 - `Facades\PhoneVerification` — use `Facades\Verification`.
 - `Concerns\HasVerifiedPhone` — use `Concerns\HasVerifiedIdentifiers`.
@@ -48,11 +76,3 @@ Removed in 3.0:
 - `VerificationResult::phoneTakenByAnotherAccount()` — use `identifierTakenByAnotherAccount()`.
 - `Events\PhoneLinked` — use `Events\IdentifierLinked`. Still dispatched alongside it; turn it off with `deprecations.dispatch_legacy_events`.
 - `FakeSender::assertSentTo($identifier, $times)` positional form — pass the channel.
-
-### Removed
-
-- Nothing that has a replacement above. v1's `phone_verifications` rows are not migrated: they live for one expiration window and their hashes are invalid under the new binding.
-
-## 1.0.0 - Unreleased
-
-Never tagged or published. Backend-only, provider-agnostic phone verification: HMAC-hashed codes, constant-time comparison, attempt limits, resend cooldown and rolling send window, rich result objects, swappable generator/sender/repository/rate-limiter/hasher, polymorphic phone links, cleanup commands, events, and a `FakeSender`.

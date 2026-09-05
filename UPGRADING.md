@@ -200,7 +200,7 @@ If you replaced the repository, link repository, hasher or rate limiter, the sig
 
 ## What still works, and for how long
 
-These shims keep v1 call sites compiling. All are **removed in 3.0**, and `phpstan-deprecation-rules` will point at every one of them.
+These shims keep v1 call sites compiling. All are **removed in 2.0**, and `phpstan-deprecation-rules` will point at every one of them.
 
 | Shim | Replacement |
 |---|---|

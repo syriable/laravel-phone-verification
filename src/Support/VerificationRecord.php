@@ -17,6 +17,7 @@ final readonly class VerificationRecord
         public string $id,
         public string $identifier,
         public Channel $channel,
+        public string $purpose,
         public string $codeHash,
         public CarbonImmutable $expiresAt,
         public ?CarbonImmutable $verifiedAt,
@@ -27,7 +28,7 @@ final readonly class VerificationRecord
 
     public function subject(): VerificationSubject
     {
-        return VerificationSubject::of($this->identifier, $this->channel);
+        return VerificationSubject::of($this->identifier, $this->channel, $this->purpose);
     }
 
     public function isVerified(): bool

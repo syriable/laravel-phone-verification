@@ -14,7 +14,7 @@ final class PlainCodeHasher implements CodeHasher
 {
     public function hash(VerificationSubject $subject, string $code): string
     {
-        return $subject->channel->value.'|'.$subject->identifier.'|'.$code;
+        return $subject->channel->value.'|'.$subject->identifier.'|'.$subject->purpose.'|'.$code;
     }
 
     public function verify(VerificationSubject $subject, string $code, string $hash): bool

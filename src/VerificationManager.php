@@ -25,6 +25,7 @@ use Syriable\OtpVerification\Results\SendResult;
 use Syriable\OtpVerification\Results\VerificationResult;
 use Syriable\OtpVerification\Results\VerificationStatus;
 use Syriable\OtpVerification\Support\ChannelConfig;
+use Syriable\OtpVerification\Support\CodeOptions;
 use Syriable\OtpVerification\Support\OtpMessage;
 use Syriable\OtpVerification\Support\OtpVerificationConfig;
 use Syriable\OtpVerification\Support\VerificationRecord;
@@ -49,18 +50,26 @@ final readonly class VerificationManager
      * Generate a fresh code, invalidate any previous unverified code for the
      * identifier on this channel, and deliver it through the channel's sender.
      */
-    public function send(string $identifier, ?Channel $channel = null): SendResult
-    {
-        return $this->deliver($this->subject($identifier, $channel), resend: false);
+    public function send(
+        string $identifier,
+        ?Channel $channel = null,
+        ?string $purpose = null,
+        ?CodeOptions $code = null,
+    ): SendResult {
+        return $this->deliver($this->subject($identifier, $channel, $purpose), resend: false, options: $code);
     }
 
     /**
      * Send a new code for an identifier that already requested one. The
      * previous code is invalidated and the resend counter carried over.
      */
-    public function resend(string $identifier, ?Channel $channel = null): SendResult
-    {
-        return $this->deliver($this->subject($identifier, $channel), resend: true);
+    public function resend(
+        string $identifier,
+        ?Channel $channel = null,
+        ?string $purpose = null,
+        ?CodeOptions $code = null,
+    ): SendResult {
+        return $this->deliver($this->subject($identifier, $channel, $purpose), resend: true, options: $code);
     }
 
     /**
@@ -77,8 +86,9 @@ final readonly class VerificationManager
         string $code,
         ?Channel $channel = null,
         ?Model $for = null,
+        ?string $purpose = null,
     ): VerificationResult {
-        $subject = $this->subject($identifier, $channel);
+        $subject = $this->subject($identifier, $channel, $purpose);
         $maxAttempts = $this->channels->config($subject->channel)->maxAttempts;
 
         $record = $this->repository->findActive($subject);
@@ -113,14 +123,14 @@ final readonly class VerificationManager
             return new VerificationResult($outcome, $record, $record->attemptsRemaining($maxAttempts));
         }
 
-        if ($for instanceof Model && $this->linkRepository->isLinkedToAnother($subject, $for)) {
+        if ($for instanceof Model && $this->linkRepository->isLinkedToAnother($subject->withoutPurpose(), $for)) {
             return new VerificationResult(VerificationOutcome::IdentifierTakenByAnotherAccount, $record);
         }
 
         $record = $this->repository->markVerified($record, $this->now());
 
         if ($for instanceof Model) {
-            $this->linkSubject($subject, $for);
+            $this->linkSubject($subject->withoutPurpose(), $for);
         }
 
         $this->events->dispatch(new VerificationSucceeded($record, $for));
@@ -132,9 +142,9 @@ final readonly class VerificationManager
      * Where the identifier stands on this channel: verified, pending, expired,
      * or none.
      */
-    public function status(string $identifier, ?Channel $channel = null): VerificationStatus
+    public function status(string $identifier, ?Channel $channel = null, ?string $purpose = null): VerificationStatus
     {
-        $subject = $this->subject($identifier, $channel);
+        $subject = $this->subject($identifier, $channel, $purpose);
 
         $record = $this->repository->findActive($subject);
 
@@ -159,9 +169,9 @@ final readonly class VerificationManager
     /**
      * Determine whether the identifier has been verified on this channel.
      */
-    public function isVerified(string $identifier, ?Channel $channel = null): bool
+    public function isVerified(string $identifier, ?Channel $channel = null, ?string $purpose = null): bool
     {
-        return $this->status($identifier, $channel)->isVerified();
+        return $this->status($identifier, $channel, $purpose)->isVerified();
     }
 
     /**
@@ -170,9 +180,9 @@ final readonly class VerificationManager
      *
      * @return int the number of invalidated codes
      */
-    public function invalidate(string $identifier, ?Channel $channel = null): int
+    public function invalidate(string $identifier, ?Channel $channel = null, ?string $purpose = null): int
     {
-        return $this->repository->invalidate($this->subject($identifier, $channel));
+        return $this->repository->invalidate($this->subject($identifier, $channel, $purpose));
     }
 
     /**
@@ -222,9 +232,20 @@ final readonly class VerificationManager
         return new PendingChannel($this, $channel);
     }
 
-    private function deliver(VerificationSubject $subject, bool $resend): SendResult
+    /**
+     * Bind a purpose on the default channel:
+     *
+     *     Verification::purpose('payout_confirmation')->send($email);
+     */
+    public function purpose(string $purpose): PendingChannel
+    {
+        return $this->channel($this->resolveChannel(null))->purpose($purpose);
+    }
+
+    private function deliver(VerificationSubject $subject, bool $resend, ?CodeOptions $options): SendResult
     {
         $channelConfig = $this->channels->config($subject->channel);
+        $options ??= new CodeOptions;
 
         if (! $channelConfig->enabled) {
             return SendResult::failure(SendOutcome::Disabled);
@@ -247,14 +268,14 @@ final readonly class VerificationManager
 
         $previous = $this->repository->findActive($subject);
 
-        $code = $this->channels->generator($subject->channel)->generate();
+        $code = $this->channels->generator($subject->channel, $options)->generate();
 
         $this->repository->invalidate($subject);
 
         $record = $this->repository->create(
             subject: $subject,
             codeHash: $this->hasher->hash($subject, $code),
-            expiresAt: $this->now()->addMinutes($channelConfig->expirationMinutes),
+            expiresAt: $this->now()->addMinutes($options->resolveExpirationMinutes($channelConfig)),
             resendCount: $resend && $previous instanceof VerificationRecord ? $previous->resendCount + 1 : 0,
         );
 
@@ -312,9 +333,9 @@ final readonly class VerificationManager
         return max(0, (int) ceil($this->now()->diffInSeconds($availableAt, false)));
     }
 
-    private function subject(string $identifier, ?Channel $channel): VerificationSubject
+    private function subject(string $identifier, ?Channel $channel, ?string $purpose = null): VerificationSubject
     {
-        return VerificationSubject::of($identifier, $this->resolveChannel($channel));
+        return VerificationSubject::of($identifier, $this->resolveChannel($channel), $purpose);
     }
 
     private function resolveChannel(?Channel $channel): Channel

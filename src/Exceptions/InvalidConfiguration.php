@@ -30,6 +30,16 @@ final class InvalidConfiguration extends InvalidArgumentException
         );
     }
 
+    public static function codeShapeWithCustomGenerator(string $channel): self
+    {
+        return new self(
+            "A per-call code shape was given for the `{$channel}` channel, but that channel is configured to use a "
+            ."custom generator at `otp-verification.channels.{$channel}.otp.generator`. The generator owns the shape "
+            .'of the codes it produces, so the two cannot both apply. Drop the code() override, or drop the '
+            .'configured generator.'
+        );
+    }
+
     public static function noDefaultChannel(): self
     {
         return new self(

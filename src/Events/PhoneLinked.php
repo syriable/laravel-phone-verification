@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Model;
  * detail this package should not bet on. Turn it off with
  * `otp-verification.deprecations.dispatch_legacy_events`.
  *
- * @deprecated since 2.0, removed in 3.0 — listen for IdentifierLinked instead
+ * @deprecated since 1.0, removed in 2.0 — listen for IdentifierLinked instead
  */
 final readonly class PhoneLinked
 {

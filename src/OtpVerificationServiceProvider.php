@@ -37,6 +37,7 @@ final class OtpVerificationServiceProvider extends PackageServiceProvider
             ->hasMigrations([
                 'create_verifications_table',
                 'create_verification_links_table',
+                'add_purpose_to_verifications_table',
             ])
             ->hasCommands(CleanupCommand::class, ClearCommand::class, MigrateV1Command::class);
     }

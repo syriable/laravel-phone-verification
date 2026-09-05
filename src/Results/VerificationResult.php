@@ -64,7 +64,7 @@ final readonly class VerificationResult
     }
 
     /**
-     * @deprecated since 2.0, removed in 3.0 — use identifierTakenByAnotherAccount()
+     * @deprecated since 1.0, removed in 2.0 — use identifierTakenByAnotherAccount()
      */
     public function phoneTakenByAnotherAccount(): bool
     {
