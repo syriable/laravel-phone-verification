@@ -1,7 +1,7 @@
 # OTP verification for Laravel
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/syriable/laravel-otp-verification.svg?style=flat-square)](https://packagist.org/packages/syriable/laravel-otp-verification)
-[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/syriable/laravel-otp-verification/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/syriable/syriable-laravel-otp-verification/actions?query=workflow%3Arun-tests+branch%3Amain)
+[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/syriable/syriable-laravel-otp-verification/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/syriable/syriable-laravel-otp-verification/actions?query=workflow%3Arun-tests+branch%3Amain)
 [![Total Downloads](https://img.shields.io/packagist/dt/syriable/laravel-otp-verification.svg?style=flat-square)](https://packagist.org/packages/syriable/laravel-otp-verification)
 
 Verify that someone controls an identifier — a phone number, an email address, a chat handle — by sending them a one-time code, over any channel, through any provider.
