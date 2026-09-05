@@ -161,6 +161,18 @@ final readonly class OtpVerificationConfig
         return (bool) $this->get('mail.mark_email_as_verified', false);
     }
 
+    /**
+     * The purpose the MustVerifyEmail bridge reacts to. Defaults to the
+     * default purpose, so a channel used for several flows over mail does not
+     * mark an address verified just because *some* code on it succeeded.
+     */
+    public function emailVerificationPurpose(): string
+    {
+        $purpose = $this->get('mail.verification_purpose');
+
+        return is_string($purpose) && $purpose !== '' ? $purpose : VerificationSubject::DEFAULT_PURPOSE;
+    }
+
     public function dispatchesLegacyEvents(): bool
     {
         return (bool) $this->get('deprecations.dispatch_legacy_events', true);
