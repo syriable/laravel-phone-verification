@@ -1,544 +1,449 @@
-# Phone verification for Laravel
+# OTP verification for Laravel
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/syriable/laravel-phone-verification.svg?style=flat-square)](https://packagist.org/packages/syriable/laravel-phone-verification)
-[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/syriable/laravel-phone-verification/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/syriable/laravel-phone-verification/actions?query=workflow%3Arun-tests+branch%3Amain)
-[![GitHub Code Style Action Status](https://img.shields.io/github/actions/workflow/status/syriable/laravel-phone-verification/fix-php-code-style-issues.yml?branch=main&label=code%20style&style=flat-square)](https://github.com/syriable/laravel-phone-verification/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
-[![Total Downloads](https://img.shields.io/packagist/dt/syriable/laravel-phone-verification.svg?style=flat-square)](https://packagist.org/packages/syriable/laravel-phone-verification)
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/syriable/laravel-otp-verification.svg?style=flat-square)](https://packagist.org/packages/syriable/laravel-otp-verification)
+[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/syriable/laravel-otp-verification/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/syriable/laravel-otp-verification/actions?query=workflow%3Arun-tests+branch%3Amain)
+[![Total Downloads](https://img.shields.io/packagist/dt/syriable/laravel-otp-verification.svg?style=flat-square)](https://packagist.org/packages/syriable/laravel-otp-verification)
 
-A backend-only, provider-agnostic phone verification (OTP) system for Laravel. Send one-time passwords through *any* SMS provider, verify them securely, and get rich result objects instead of exceptions — with rate limiting, resend cooldowns, attempt limits, and brute-force protection built in.
+Verify that someone controls an identifier — a phone number, an email address, a chat handle — by sending them a one-time code, over any channel, through any provider.
 
 ```php
-use Syriable\PhoneVerification\Facades\PhoneVerification;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Facades\Verification;
 
-$result = PhoneVerification::send('+31612345678');
+// SMS                                        // Email
+Verification::send('+31612345678',            Verification::send('ada@example.com',
+    Channel::sms());                              Channel::mail());
 
-$result = PhoneVerification::verify(phone: '+31612345678', code: '482913');
-
-if ($result->successful()) {
-    // the phone number is verified
-}
+Verification::verify('+31612345678',          Verification::verify('ada@example.com',
+    '482913', Channel::sms());                    'K7M2P9QX', Channel::mail());
 ```
 
-The package ships no UI, no views, and no frontend assets — just a clean service layer and a facade you can wire into any API, mobile backend, or SPA.
+Both channels are first-class. They have their own sender, their own code shape, their own expiry, and their own throttling — and the same address can hold an independent code on each at the same time.
+
+The package ships no UI, no views, no routes, and no frontend assets — just a service layer and a facade you wire into your own API, mobile backend, or SPA.
 
 ## Why this package?
 
-- **Provider agnostic** — bring your own sender: Twilio, Vonage, AWS SNS, MessageBird, Sinch, or a plain HTTP call. The package never dictates a provider.
-- **Secure by default** — codes are stored as HMAC-SHA256 hashes (never plain text), compared in constant time, invalidated on success, expiry, and attempt exhaustion, and shielded by two layers of rate limiting.
-- **Rich results, no exceptions** — expected outcomes (`expired`, `invalid`, `tooManyAttempts`, …) are values you branch on, not exceptions you catch.
-- **Everything is replaceable** — generator, sender, repository, rate limiter, and hasher all sit behind small interfaces bound through the config file.
+- **Any channel, any provider.** SMS and email out of the box; WhatsApp, Telegram or push by adding a config block and a class — no release of this package required.
+- **Secure by default.** Codes are stored as HMAC-SHA256 hashes bound to `(identifier, channel)`, compared in constant time, and invalidated on success, expiry and attempt exhaustion, behind two independent layers of throttling.
+- **Rich results, no exceptions.** Expected outcomes (`expired`, `invalid`, `tooManyAttempts`, …) are values you branch on, not exceptions you catch.
+- **Everything is replaceable.** Generator, sender, repository, link storage, rate limiter and hasher all sit behind small contracts resolved from config.
 
 ## Installation
 
-You can install the package via composer:
-
 ```bash
-composer require syriable/laravel-phone-verification
+composer require syriable/laravel-otp-verification
 ```
 
 Publish and run the migrations:
 
 ```bash
-php artisan vendor:publish --tag="laravel-phone-verification-migrations"
+php artisan vendor:publish --tag="laravel-otp-verification-migrations"
 php artisan migrate
 ```
 
-Optionally publish the config file:
+Publish the config file:
 
 ```bash
-php artisan vendor:publish --tag="laravel-phone-verification-config"
+php artisan vendor:publish --tag="laravel-otp-verification-config"
 ```
 
-Finally, tell the package how to deliver codes by pointing the `sender` config option at your own sender class (see [Sending codes](#sending-codes)):
+Then point each channel you use at a sender class of your own (see [Senders](#senders)):
 
 ```php
-// config/phone-verification.php
-'sender' => App\Verification\TwilioSender::class,
+// config/otp-verification.php
+'channels' => [
+    'sms'  => ['sender' => App\Verification\TwilioSender::class],
+    'mail' => ['sender' => App\Verification\MailOtpSender::class],
+],
 ```
 
-## Configuration
+## Identifiers are opaque
 
-Every behavior is configurable. This is the published config file:
+This package never parses what you give it. It does not know what a valid phone number is, and it does not know what a valid email address is. It stores the string, hashes it, and compares it byte for byte.
+
+That means **normalisation is your job, before you call it**:
+
+| Channel | Normalise to | Because |
+|---|---|---|
+| `sms` | E.164, e.g. `+31612345678` | `0612345678` and `+31612345678` are two different identities here. |
+| `mail` | A lowercased address, e.g. `ada@example.com` | `Ada@Example.com` and `ada@example.com` are two different identities here. |
+
+Validate format with Laravel's own rules (`email`, or a package like `propaganistas/laravel-phone`) before calling `send()`.
+
+## Choosing a channel
+
+Three equivalent ways, in increasing order of terseness:
 
 ```php
-return [
-    // Toggle the whole feature. When disabled, send() returns a failed result.
-    'enabled' => env('PHONE_VERIFICATION_ENABLED', true),
+// 1. Explicit — always unambiguous.
+Verification::send('ada@example.com', Channel::mail());
 
-    // Optional ISO country code, available to your sender for E.164 formatting.
-    'default_country' => env('PHONE_VERIFICATION_DEFAULT_COUNTRY'),
+// 2. Fluent, when a block of code works on one channel throughout.
+$mail = Verification::channel(Channel::mail());
+$mail->send('ada@example.com');
+$mail->verify('ada@example.com', $code, for: $user);
 
-    // Minutes a code stays valid.
-    'expiration' => 5,
-
-    // Seconds a user must wait before requesting another code.
-    'resend_after' => 60,
-
-    // How many times a single code may be checked before it becomes unusable.
-    'max_attempts' => 5,
-
-    // At most `max_send_attempts` codes per phone per `per_minutes` minutes.
-    'max_send_attempts' => 3,
-    'per_minutes' => 15,
-
-    // Code shape: length, type (numeric|alphabetic|alphanumeric),
-    // a custom character set, or a fully custom generator class.
-    'otp' => [
-        'length' => 6,
-        'type' => 'numeric',
-        'characters' => null,
-        'generator' => null,
-    ],
-
-    // Your PhoneVerificationSender implementation. Required.
-    'sender' => null,
-
-    // Storage, throttling and hashing — all swappable.
-    'repository' => DatabaseVerificationRepository::class,
-    'table' => 'phone_verifications',
-    'rate_limiter' => CacheSendRateLimiter::class,
-    'hash_driver' => HmacCodeHasher::class,
-
-    // How long `verification:cleanup` keeps verified records around.
-    'cleanup' => [
-        'keep_verified_for_days' => 7,
-    ],
-];
+// 3. Implicit, using `default_channel` from the config file.
+Verification::send('+31612345678');
 ```
 
-## Sending codes
+> **If you use more than one channel, set `'default_channel' => null`.** The channel argument then becomes required, and passing an email address to a call that would otherwise have defaulted to SMS fails loudly instead of quietly sending the wrong thing.
 
-First, write a sender. It receives the phone number and the plain-text code — how it reaches the phone is entirely up to you:
+## Senders
+
+A sender receives an `OtpMessage` and delivers it. How it reaches the person is entirely up to you.
+
+### An SMS sender
 
 ```php
 namespace App\Verification;
 
-use Syriable\PhoneVerification\Contracts\PhoneVerificationSender;
+use Syriable\OtpVerification\Contracts\OtpSender;
+use Syriable\OtpVerification\Support\OtpMessage;
 use Twilio\Rest\Client;
 
-class TwilioSender implements PhoneVerificationSender
+final readonly class TwilioSender implements OtpSender
 {
-    public function __construct(
-        private readonly Client $twilio,
-    ) {}
+    public function __construct(private Client $twilio) {}
 
-    public function send(string $phone, string $code): void
+    public function send(OtpMessage $message): void
     {
-        $this->twilio->messages->create($phone, [
+        $this->twilio->messages->create($message->identifier(), [
             'from' => config('services.twilio.from'),
-            'body' => "Your verification code is {$code}",
+            'body' => "Your code is {$message->code}. It expires in {$message->expiresInMinutes()} minutes.",
         ]);
     }
 }
 ```
 
-Senders are resolved from the container, so constructor dependencies are injected automatically. Register it in the config:
-
-```php
-'sender' => App\Verification\TwilioSender::class,
-```
-
-### Example: Vonage
-
-Install Vonage's official Laravel integration — it registers `Vonage\Client` in the container for you, so your sender needs no extra bindings:
-
-```bash
-composer require vonage/vonage-laravel
-php artisan vendor:publish --provider="Vonage\Laravel\VonageServiceProvider"
-```
-
-Set your credentials in `.env`:
-
-```
-VONAGE_KEY=your_api_key
-VONAGE_SECRET=your_secret
-VONAGE_FROM=Verify
-```
+### An email sender
 
 ```php
 namespace App\Verification;
 
-use Syriable\PhoneVerification\Contracts\PhoneVerificationSender;
-use Vonage\Client;
-use Vonage\SMS\Message\SMS;
+use Illuminate\Contracts\Mail\Mailer;
+use Syriable\OtpVerification\Contracts\OtpSender;
+use Syriable\OtpVerification\Support\OtpMessage;
 
-class VonageSender implements PhoneVerificationSender
+final readonly class MailOtpSender implements OtpSender
 {
-    public function __construct(
-        private readonly Client $vonage,
-    ) {}
+    public function __construct(private Mailer $mailer) {}
 
-    public function send(string $phone, string $code): void
+    public function send(OtpMessage $message): void
     {
-        $this->vonage->sms()->send(
-            new SMS($phone, env('VONAGE_FROM'), "Your verification code is {$code}")
-        );
+        $this->mailer
+            ->to($message->identifier())
+            ->send(new \App\Mail\VerificationCode($message->code, $message->expiresInMinutes()));
     }
 }
 ```
 
-Then point the package at it:
+Senders are resolved from the container, so constructor injection works. The message carries its channel (`$message->channel()`), so one class can serve several channels if you register it under each.
+
+> **Never log, persist, or attach the code to an error report.** `OtpMessage` is the only place the plain-text code exists, and handing it to your sender is the only moment it leaves the package.
+
+## Verifying
 
 ```php
-'sender' => App\Verification\VonageSender::class,
+$result = Verification::verify('ada@example.com', $code, Channel::mail());
+
+match (true) {
+    $result->successful()      => redirect()->route('dashboard'),
+    $result->invalid()         => back()->withErrors(['code' => "That code isn't right. {$result->attemptsRemaining} attempts left."]),
+    $result->expired()         => back()->withErrors(['code' => 'That code has expired. Request a new one.']),
+    $result->tooManyAttempts() => back()->withErrors(['code' => 'Too many attempts. Request a new code.']),
+    $result->notFound()        => back()->withErrors(['code' => 'Request a code first.']),
+    $result->alreadyVerified() => redirect()->route('dashboard'),
+    default                    => back()->withErrors(['code' => 'Could not verify that code.']),
+};
 ```
 
-Then send a code:
+Sending returns a result too:
 
 ```php
-use Syriable\PhoneVerification\Facades\PhoneVerification;
+$result = Verification::send('+31612345678', Channel::sms());
 
-$result = PhoneVerification::send('+31612345678');
-
-$result->successful();   // true when the code was generated and handed to your sender
-$result->onCooldown();   // a code was sent too recently
-$result->rateLimited();  // too many codes in the configured window
-$result->disabled();     // the package is disabled via config
-$result->retryAfter();   // seconds until sending may succeed again (cooldown/rate limit)
-$result->verification;   // the stored VerificationRecord (hash only, never the code)
-```
-
-Sending a new code automatically invalidates any previous unverified code for that phone number — only one code is ever active.
-
-A typical controller:
-
-```php
-public function store(Request $request)
-{
-    $result = PhoneVerification::send($request->string('phone')->value());
-
-    if ($result->failed()) {
-        return response()->json([
-            'message' => 'Please wait before requesting another code.',
-            'retry_after' => $result->retryAfter(),
-        ], 429);
-    }
-
-    return response()->json(['message' => 'Code sent.']);
+if ($result->onCooldown() || $result->rateLimited()) {
+    return response()->json(['retry_after' => $result->retryAfter()], 429);
 }
 ```
 
-## Verification
+### Status and invalidation
 
 ```php
-$result = PhoneVerification::verify(
-    phone: '+31612345678',
-    code: '482913',
-);
+Verification::status('+31612345678', Channel::sms());     // pending | verified | expired | none
+Verification::isVerified('ada@example.com', Channel::mail());
+Verification::invalidate('+31612345678', Channel::sms()); // kill outstanding codes
+Verification::resend('+31612345678', Channel::sms());
 ```
 
-Expected outcomes are values on a rich result object — no exceptions to catch:
+## Linking identifiers to your models
+
+Add the trait to any model that can own verified identifiers:
 
 ```php
-$result->successful();       // code correct, phone verified
-$result->invalid();          // wrong code, attempts remain
-$result->expired();          // the code expired
-$result->tooManyAttempts();  // the attempt limit made the code unusable
-$result->alreadyVerified();  // the phone was verified earlier (replay protection)
-$result->notFound();         // no code was ever sent to this phone
-$result->failed();           // shorthand for "not successful"
-
-$result->outcome;            // the VerificationOutcome enum behind the booleans
-$result->attemptsRemaining;  // attempts left on the active code, when relevant
-```
-
-Once a code has been used successfully it can never be replayed: a second `verify()` call with the same (or any) code returns `alreadyVerified()`.
-
-To link the phone number to one of your own models (e.g. a `User`) the moment verification succeeds, pass it as `for` — see [Linking a phone to a model](#linking-a-phone-to-a-model):
-
-```php
-$result = PhoneVerification::verify(phone: '+31612345678', code: '482913', for: $user);
-
-$result->phoneTakenByAnotherAccount(); // the code was correct, but the phone belongs to a different account
-```
-
-### Checking status
-
-```php
-$status = PhoneVerification::status('+31612345678');
-
-$status->isVerified();        // the phone completed verification
-$status->isPending();         // a code is out and still valid
-$status->isExpired();         // the active code expired
-$status->isNone();            // nothing on record
-$status->expiresAt;           // when the pending code expires
-$status->verifiedAt;          // when verification succeeded
-$status->attemptsRemaining;   // attempts left on the pending code
-
-// or, as a one-liner:
-PhoneVerification::isVerified('+31612345678');
-```
-
-### Resending
-
-`resend()` invalidates the previous code, sends a fresh one, and tracks how often the user asked for another:
-
-```php
-$result = PhoneVerification::resend('+31612345678');
-
-$result->verification?->resendCount; // 1, 2, 3, ...
-```
-
-The resend cooldown (`resend_after`) applies to both `send()` and `resend()`. Before it elapses you get a failed result with `retryAfter()` filled in — perfect for a countdown in your frontend.
-
-### Invalidating
-
-Cancel any outstanding code, for example after the user changes their phone number:
-
-```php
-PhoneVerification::invalidate('+31612345678');
-```
-
-## Linking a phone to a model
-
-Each phone number can be linked to exactly one of your Eloquent models — typically a `User`, but any model works via a polymorphic (`morphTo`) relationship. This lives in its own `phone_verification_links` table, entirely separate from the OTP lifecycle, so linking is optional and never changes how `send()`/`resend()` behave.
-
-Add the trait to any model that can own a verified phone number:
-
-```php
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Syriable\PhoneVerification\Concerns\HasVerifiedPhone;
+use Syriable\OtpVerification\Concerns\HasVerifiedIdentifiers;
 
 class User extends Authenticatable
 {
-    use HasVerifiedPhone;
+    use HasVerifiedIdentifiers;
 }
 ```
 
-This gives you a real Eloquent relation plus two convenience helpers:
+Pass the model to `verify()` and it is linked the moment the code is confirmed:
 
 ```php
-$user->phoneVerificationLink;        // MorphOne<PhoneVerificationLink> — eager-loadable, e.g. User::with('phoneVerificationLink')
-$user->verifiedPhoneNumber();        // '+31612345678' or null
-$user->hasVerifiedPhoneNumber();     // bool
+$result = Verification::verify('+31612345678', $code, Channel::sms(), for: $user);
+
+if ($result->identifierTakenByAnotherAccount()) {
+    return back()->withErrors(['phone' => 'That number already belongs to another account.']);
+}
 ```
 
-The most common flow is auto-linking on successful verification, by passing the model as `for`:
+A model holds **at most one verified identifier per channel**, so the same user can carry a verified phone number and a verified email address at once:
 
 ```php
-$result = PhoneVerification::verify(phone: '+31612345678', code: '482913', for: $user);
+$user->verifiedIdentifier(Channel::sms());    // '+31612345678'
+$user->verifiedIdentifier(Channel::mail());   // 'ada@example.com'
+$user->hasVerifiedIdentifier(Channel::mail());
+$user->verifiedEmailAddress();                // sugar for the line above
 
-$result->successful();                 // linked: the code was correct and the phone wasn't taken
-$result->phoneTakenByAnotherAccount(); // the code was correct, but the phone already belongs to someone else
+Verification::linkedTo('+31612345678', Channel::sms());   // the User
+Verification::identifierFor($user, Channel::sms());       // '+31612345678'
+Verification::link('+31612345678', $user, Channel::sms());
+Verification::unlink('+31612345678', Channel::sms());
 ```
 
-A phone number can only ever be linked to one model at a time — verifying it a second time for the *same* model is idempotent, but verifying it for a *different* model fails with `phoneTakenByAnotherAccount()` instead of silently stealing the number.
+Both directions are enforced by unique indexes: one identifier belongs to one model per channel, and one model holds one identifier per channel. Replacing a number is therefore an explicit `unlink()` then `link()`, never a silent overwrite.
 
-You can also manage links directly, independently of the OTP flow (for example when you already know a phone was verified through another channel, or want to detach it):
+Eager-load the relation when you touch a collection, and the accessors read from memory instead of querying per model:
 
 ```php
-PhoneVerification::link('+31612345678', $user);   // true, or false if taken by another model
-PhoneVerification::linkedTo('+31612345678');       // the linked model, or null
-PhoneVerification::phoneFor($user);                // the phone linked to this model, or null
-PhoneVerification::unlink('+31612345678');         // removes the link, returns 0 or 1
+User::query()->with('verificationLinks')->get();
 ```
 
-Storage goes through the `PhoneLinkRepository` contract, so it's swappable like everything else — set `link_repository` in the config to your own implementation.
+## Working with Laravel's email verification
 
-The published `create_phone_verification_links_table` migration uses `$table->morphs('verifiable')`, which assumes auto-incrementing integer model keys. If your models use UUIDs, edit the published migration to use `$table->uuidMorphs('verifiable')` (or `$table->ulidMorphs('verifiable')`) instead.
+This package can drive Laravel's own `MustVerifyEmail` / `verified` middleware, so you can replace signed verification links with OTP codes and keep everything downstream working.
 
-## Custom OTP generation
-
-Tune the generated codes through config:
+Turn the bridge on:
 
 ```php
-'otp' => [
-    'length' => 8,
-    'type' => 'alphanumeric', // numeric, alphabetic, alphanumeric
-],
+// config/otp-verification.php
+'mail' => ['mark_email_as_verified' => true],
 ```
 
-The alphabetic and alphanumeric sets deliberately exclude ambiguous characters (`0`/`O`, `1`/`I`). Prefer full control? Provide your own characters:
+Then verify with the user attached:
 
 ```php
-'otp' => [
-    'length' => 6,
-    'characters' => 'ACDEFGHJKLMNPQRTUVWXY34679',
-],
+Verification::verify($user->email, $code, Channel::mail(), for: $user);
 ```
 
-Or replace the generator entirely with any class implementing `OtpGenerator`:
+On success the package calls `markEmailAsVerified()` and dispatches `Illuminate\Auth\Events\Verified`, so the `verified` middleware and any listeners behave exactly as they would after a signed link.
+
+The user must reach the bridge either as `for:` or through an existing link. The package deliberately **never looks a user up by email address** — that would let anyone who verifies an address mark an account they do not own as verified. It is inert while the config flag is off: the listener is never even registered.
+
+### Sending the code on registration
+
+Hook Laravel's `Registered` event and send a code instead of the default notification:
 
 ```php
-namespace App\Verification;
+namespace App\Listeners;
 
-use Syriable\PhoneVerification\Contracts\OtpGenerator;
+use Illuminate\Auth\Events\Registered;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Facades\Verification;
 
-class WordOtpGenerator implements OtpGenerator
+final readonly class SendEmailVerificationCode
 {
-    public function generate(): string
+    public function handle(Registered $event): void
     {
-        return collect(['apple', 'river', 'sunny'])->random()
-            .random_int(100, 999);
+        Verification::send($event->user->getEmailForVerification(), Channel::mail());
     }
 }
 ```
 
+Laravel's own `SendEmailVerificationNotification` listener is registered by the framework for `Registered`, so without one more step your users receive **both** a signed link and a code. Suppress the link by overriding the notification on your user model:
+
 ```php
-'otp' => [
-    'generator' => App\Verification\WordOtpGenerator::class,
+class User extends Authenticatable implements MustVerifyEmail
+{
+    // Laravel calls this from its own listener; making it a no-op leaves the
+    // OTP as the only thing the user receives.
+    public function sendEmailVerificationNotification(): void
+    {
+        //
+    }
+}
+```
+
+Then register your listener in `AppServiceProvider::boot()`:
+
+```php
+Event::listen(Registered::class, SendEmailVerificationCode::class);
+```
+
+## Configuration
+
+Every setting has a global default, and every one of them can be overridden per channel. Resolution is always:
+
+```
+channels.{channel}.{key}  →  {key}  →  the package default
+```
+
+so a channel overrides what it cares about and inherits the rest.
+
+```php
+'expiration'        => 5,   // minutes a code stays valid
+'resend_after'      => 60,  // seconds before another code may be requested
+'max_attempts'      => 5,   // checks allowed against one code
+'max_send_attempts' => 3,   // codes per rolling window
+'per_minutes'       => 15,  // the rolling window
+
+'channels' => [
+    'sms' => [
+        'sender' => App\Verification\TwilioSender::class,
+    ],
+    'mail' => [
+        'sender' => App\Verification\MailOtpSender::class,
+        'expiration' => 30,           // email is read later, on another device
+        'resend_after' => 120,
+        'max_send_attempts' => 5,     // email is free; SMS is not
+        'otp' => ['length' => 8, 'type' => 'alphanumeric'],
+        'cleanup' => ['keep_verified_for_days' => 30],
+    ],
 ],
 ```
 
-Use a cryptographically secure random source (`random_int()`, `random_bytes()`) in custom generators — predictable codes defeat the purpose.
+The defaults ship this way on purpose: SMS costs money per message, so its window is tighter; email is read minutes later on another device, so its codes live longer and are longer.
 
-## Repository customization
+### Adding your own channel
 
-All storage goes through the `VerificationRepository` interface. The default `DatabaseVerificationRepository` persists to the `phone_verifications` table, but you can point the package at Redis, the cache, or an external service without touching any package logic:
+No package release needed:
 
 ```php
-'repository' => App\Verification\RedisVerificationRepository::class,
+'channels' => [
+    'whatsapp' => ['sender' => App\Verification\WhatsAppSender::class],
+],
 ```
 
-Your implementation needs to cover creating records, finding the active/verified record for a phone, tracking the last send time, incrementing attempts, marking success, invalidating, pruning, and clearing — see the interface for the exact signatures. Records travel through the package as immutable `VerificationRecord` value objects, so repositories stay completely decoupled from Eloquent.
+```php
+Verification::send('+31612345678', Channel::of('whatsapp'));
+```
 
-The same pattern applies to the other extension points:
+### Queued delivery
 
-| Config key | Interface | Default |
-| --- | --- | --- |
-| `otp.generator` | `OtpGenerator` | `RandomOtpGenerator` |
-| `sender` | `PhoneVerificationSender` | — (required) |
-| `repository` | `VerificationRepository` | `DatabaseVerificationRepository` |
-| `rate_limiter` | `SendRateLimiter` | `CacheSendRateLimiter` |
-| `hash_driver` | `CodeHasher` | `HmacCodeHasher` |
-| `link_repository` | `PhoneLinkRepository` | `DatabasePhoneLinkRepository` |
+Off by default — sends happen inside the request, so failures surface immediately in `SendResult`.
 
-Every configured class is validated against its interface at resolve time; a misconfigured class throws a descriptive `InvalidConfiguration` exception.
+```php
+'queue' => true,
+// or, per channel:
+'channels' => ['sms' => ['queue' => ['connection' => 'redis', 'queue' => 'otp', 'tries' => 1]]],
+```
+
+Two things to know before turning it on:
+
+- **The plain-text code is written to your queue backend.** The job implements `ShouldBeEncrypted`, so it is encrypted at rest with your application key, but the code does leave the database boundary.
+- **Delivery failures stop surfacing in `SendResult`.** A successful result then means "accepted for delivery", not "delivered".
+
+`tries` defaults to `1` deliberately: a retried job sends a second real SMS, at real cost, to someone who only asked once.
 
 ## Events
 
-The package dispatches plain event objects you can listen to:
+Every event carries the immutable record — including its channel — and never the plain-text code.
 
 | Event | Dispatched when |
-| --- | --- |
-| `VerificationCreated` | a new code was generated and stored |
-| `VerificationSent` | the sender delivered a code |
-| `VerificationResent` | the code was sent through `resend()` (follows `VerificationSent`) |
-| `VerificationSucceeded` | a code was verified successfully |
-| `VerificationFailed` | a wrong code was submitted (`outcome` tells you whether attempts ran out) |
-| `VerificationExpired` | a verification attempt hit an expired code |
-| `PhoneLinked` | a phone number was linked to a model, via `verify(..., for: $model)` or `link()` |
+|---|---|
+| `VerificationCreated` | a code has been generated and stored |
+| `VerificationSent` | the sender has accepted the code |
+| `VerificationResent` | the send was a resend |
+| `VerificationSucceeded` | a code was verified (carries the model, if one was passed) |
+| `VerificationFailed` | a code was rejected (carries the outcome) |
+| `VerificationExpired` | an expired code was presented |
+| `IdentifierLinked` | an identifier was linked to a model |
 
-Every event exposes the immutable `VerificationRecord` — never the plain-text code:
-
-```php
-use Syriable\PhoneVerification\Events\VerificationSucceeded;
-
-class ActivateCustomer
-{
-    public function handle(VerificationSucceeded $event): void
-    {
-        Customer::wherePhone($event->verification->phone)->firstOrFail()->activate();
-    }
-}
-```
-
-## Console commands & scheduling
+## Console commands
 
 ```bash
-# Remove expired codes and verified records older than the configured retention
-php artisan verification:cleanup
-
-# Remove all verification records, or only those of one phone number
-php artisan verification:clear
-php artisan verification:clear +31612345678
+php artisan verification:cleanup                      # prune every channel at its own retention
+php artisan verification:cleanup --channel=sms
+php artisan verification:clear                        # delete everything
+php artisan verification:clear --channel=mail
+php artisan verification:clear ada@example.com --channel=mail
 ```
 
-Schedule the cleanup to keep the table lean:
+Schedule the cleanup in `routes/console.php`:
 
 ```php
-// routes/console.php
-use Illuminate\Support\Facades\Schedule;
-
 Schedule::command('verification:cleanup')->daily();
 ```
 
 ## Testing your integration
 
-The package ships a `FakeSender` that captures codes in memory instead of delivering them:
+Point every channel at the shipped `FakeSender` and assert against what it captured:
 
 ```php
-use Syriable\PhoneVerification\Facades\PhoneVerification;
-use Syriable\PhoneVerification\Testing\FakeSender;
+use Syriable\OtpVerification\Channel;
+use Syriable\OtpVerification\Testing\FakeSender;
 
-beforeEach(function () {
-    $this->app->singleton(FakeSender::class);
-    config()->set('phone-verification.sender', FakeSender::class);
-});
+$this->app->singleton(FakeSender::class);
+config()->set('otp-verification.channels.sms.sender', FakeSender::class);
+config()->set('otp-verification.channels.mail.sender', FakeSender::class);
 
-it('verifies a phone during registration', function () {
-    $this->postJson('/verification', ['phone' => '+31612345678'])->assertOk();
+$sender = $this->app->make(FakeSender::class);
 
-    $sender = app(FakeSender::class);
-    $sender->assertSentTo('+31612345678');
+Verification::send('ada@example.com', Channel::mail());
 
-    $code = $sender->lastCodeFor('+31612345678');
+$sender->assertSentTo('ada@example.com', Channel::mail());
+$sender->assertSentOn(Channel::mail(), times: 1);
+$sender->assertNothingSentOn(Channel::sms());
 
-    $this->postJson('/verification/confirm', [
-        'phone' => '+31612345678',
-        'code' => $code,
-    ])->assertOk();
-
-    expect(PhoneVerification::isVerified('+31612345678'))->toBeTrue();
-});
+$code = $sender->lastCodeFor('ada@example.com', Channel::mail());
 ```
 
-`FakeSender` also offers `codesFor($phone)`, `sentCount()`, `assertSentTo($phone, times: 2)`, `assertNothingSent()`, and `reset()`.
+## Extending
+
+Every collaborator is a contract resolved from config:
+
+| Config key | Contract | Swap it when |
+|---|---|---|
+| `channels.*.sender` | `OtpSender` | always — this is the one class you write |
+| `channels.*.otp.generator`, `otp.generator` | `OtpGenerator` | you need a check digit, a wordlist, or a different shape on one channel |
+| `hash_driver` | `CodeHasher` | you must hash in an HSM or with a separate pepper |
+| `repository` | `VerificationRepository` | codes belong in Redis, or need tenancy scoping |
+| `link_repository` | `LinkRepository` | identity links already live in your own schema |
+| `rate_limiter` | `SendRateLimiter` | you throttle on IP + identifier, or a shared provider quota |
+| `models.*` | — | you want to extend the Eloquent models |
+
+The public API takes strings and channels; the contracts take a `VerificationSubject`, which is an `(identifier, channel)` pair.
 
 ## Security
 
-- **No plain-text storage.** Codes are stored as HMAC-SHA256 hashes keyed with your application key. The hash is bound to the phone number, so a leaked hash is useless for any other number — and it is hidden from model serialization.
-- **Constant-time comparison.** Verification uses `hash_equals()`; timing attacks reveal nothing.
-- **Replay protection.** A code becomes unusable the moment it succeeds; repeat submissions return `alreadyVerified()`.
-- **Automatic invalidation.** Codes die on success, on expiry, when the attempt limit is reached, and whenever a new code is issued.
-- **Brute-force protection.** Verification attempts per code are capped (`max_attempts`), and sends are throttled twice: a per-send cooldown (`resend_after`) and a rolling window (`max_send_attempts` per `per_minutes`). Rate-limiter cache keys hash the phone number.
-- **No sensitive logging.** The package never logs codes or phone numbers; the plain-text code only ever touches your sender.
+- Codes are stored only as HMAC-SHA256 hashes keyed with your `APP_KEY`, over a length-prefixed encoding of `(channel, identifier, code)` — so a hash can never be replayed against another identifier or another channel, and no identifier can be crafted to collide with another.
+- Comparison is constant time (`hash_equals`).
+- Codes are invalidated on success, expiry, attempt exhaustion, and whenever a new code is issued.
+- Two independent throttles: a per-identifier resend cooldown and a rolling send window.
+- Rate-limiter cache keys hash the identifier, so no phone number or email address is written to your cache.
+- Nothing in this package writes a code or an identifier to a log — enforced by an architecture test.
 
-Found a vulnerability? Please review [our security policy](../../security/policy).
-
-## Best practices
-
-- Normalize phone numbers to E.164 (`+31612345678`) *before* calling the package — it treats numbers as opaque strings, so `+31 6 12345678` and `+31612345678` would be two different identities.
-- Keep expiration short (5–10 minutes) and codes at 6+ characters.
-- Add per-IP/user throttling on your HTTP endpoints on top of the built-in per-phone limits (`ThrottleRequests` middleware works well).
-- Surface `retryAfter()` in your API responses so clients can display an accurate countdown.
-- Schedule `verification:cleanup` daily; expired rows are useless and verified rows only need to live as long as your product needs the audit trail.
-- Never echo the code back in any API response, error message, or log — deliver it exclusively through the sender.
-
-## Upgrade guide
-
-This is the initial release, so there is nothing to upgrade from yet. Future releases will follow semver:
-
-- **Patch/minor releases** never require changes.
-- **Major releases** will document every breaking change here, including config keys to rename, interface methods to add, and a migration path for stored data.
-
-After upgrading, re-publish the config when the changelog says new options were added:
-
-```bash
-php artisan vendor:publish --tag="laravel-phone-verification-config" --force
-```
+Rotating `APP_KEY` invalidates every outstanding code, by design.
 
 ## Testing the package
 
 ```bash
 composer test
 composer analyse
-composer format
 ```
 
 ## Changelog
 
-Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
-
-## Contributing
-
-Please see [CONTRIBUTING](CONTRIBUTING.md) for details.
+See [CHANGELOG.md](CHANGELOG.md). Upgrading from v1? See [UPGRADING.md](UPGRADING.md).
 
 ## Credits
 
 - [syriable](https://github.com/syriable)
-- [All Contributors](../../contributors)
 
 ## License
 
-The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
+The MIT License (MIT). See [LICENSE.md](LICENSE.md).
