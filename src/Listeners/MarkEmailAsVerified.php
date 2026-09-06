@@ -10,6 +10,7 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Contracts\Events\Dispatcher;
 use Syriable\OtpVerification\Contracts\LinkRepository;
 use Syriable\OtpVerification\Events\VerificationSucceeded;
+use Syriable\OtpVerification\Support\OtpVerificationConfig;
 
 /**
  * Bridges a verified mail-channel identifier into Laravel's own email
@@ -20,6 +21,14 @@ use Syriable\OtpVerification\Events\VerificationSucceeded;
  * `otp-verification.mail.mark_email_as_verified` is true, so when it is off
  * the class is never even constructed.
  *
+ * Only reacts to one purpose on the mail channel — the default purpose unless
+ * `mail.verification_purpose` says otherwise. Without this check, a mail
+ * channel also used for other flows (a payout code, say) would mark the
+ * user's email verified the moment *any* code on it succeeded, because every
+ * flow on the channel shares the same identifier. Purposes exist precisely to
+ * keep those flows apart; this listener has to respect that separation
+ * itself, since VerificationSucceeded fires for every purpose alike.
+ *
  * The model is taken from verify(for: $user), or from an existing link. It is
  * deliberately never looked up by email address: doing that would let anyone
  * who verifies an address flip `email_verified_at` on an account they were
@@ -29,6 +38,7 @@ final readonly class MarkEmailAsVerified
 {
     public function __construct(
         private LinkRepository $links,
+        private OtpVerificationConfig $config,
         private Dispatcher $events,
     ) {}
 
@@ -37,6 +47,10 @@ final readonly class MarkEmailAsVerified
         $record = $event->verification;
 
         if (! $record->channel->isMail()) {
+            return;
+        }
+
+        if ($record->purpose !== $this->config->emailVerificationPurpose()) {
             return;
         }
 

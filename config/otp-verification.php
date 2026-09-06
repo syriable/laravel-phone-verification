@@ -193,10 +193,17 @@ return [
     | listener never looks a user up by email address — that would let anyone
     | who verifies an address mark an account they do not own as verified.
     |
+    | `verification_purpose` scopes the bridge to one purpose on the mail
+    | channel — null means the default purpose. If you also use the mail
+    | channel for something else (a payout code, a second factor), leave this
+    | alone: without it, succeeding at *that* flow would mark the email
+    | verified too, since every purpose on a channel shares the same address.
+    |
     */
 
     'mail' => [
         'mark_email_as_verified' => false,
+        'verification_purpose' => null,
     ],
 
     /*

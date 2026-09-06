@@ -90,4 +90,39 @@ describe('the MustVerifyEmail bridge, enabled', function (): void {
 
         Event::assertNotDispatched(Verified::class);
     });
+
+    it('ignores a successful verification on a different purpose over the same channel', function (): void {
+        // The scenario the purpose check exists for: mail also used for a
+        // second flow. Succeeding at THAT must not mark the email verified.
+        Event::fake([Verified::class]);
+
+        $user = bridgeUser();
+
+        Verification::channel(Channel::mail())->purpose('payout_confirmation')->send('ada@example.com');
+
+        $payoutCode = (string) test()->fakeSender()->lastCodeFor('ada@example.com', Channel::mail(), 'payout_confirmation');
+
+        $result = Verification::channel(Channel::mail())
+            ->purpose('payout_confirmation')
+            ->verify('ada@example.com', $payoutCode, for: $user);
+
+        expect($result->successful())->toBeTrue()
+            ->and($user->fresh()?->hasVerifiedEmail())->toBeFalse();
+
+        Event::assertNotDispatched(Verified::class);
+    });
+
+    it('honours a configured non-default verification purpose', function (): void {
+        config()->set('otp-verification.mail.verification_purpose', 'email_activation');
+        app()->register(OtpVerificationServiceProvider::class, force: true);
+
+        $user = bridgeUser();
+
+        $code = Verification::channel(Channel::mail())->purpose('email_activation')->send('ada@example.com');
+        $activationCode = (string) test()->fakeSender()->lastCodeFor('ada@example.com', Channel::mail(), 'email_activation');
+
+        Verification::channel(Channel::mail())->purpose('email_activation')->verify('ada@example.com', $activationCode, for: $user);
+
+        expect($user->fresh()?->hasVerifiedEmail())->toBeTrue();
+    });
 });
